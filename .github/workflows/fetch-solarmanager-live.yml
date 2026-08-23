@@ -2,8 +2,8 @@ name: Solar Manager Live -> Turso
 
 on:
   schedule:
-    # alle 30 Minuten (UTC) - bei Bedarf anpassen
-    - cron: "*/30 * * * *"
+    # alle 15 Minuten (UTC) - bei Bedarf anpassen
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
