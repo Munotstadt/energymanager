@@ -46,7 +46,7 @@ jobs:
       - name: Lademodus setzen
         env:
           SM_EMAIL: ${{ secrets.SM_EMAIL }}
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_API_KEY_WRITE: ${{ secrets.SM_API_KEY_WRITE }}
           SM_BASE_URL: ${{ vars.SM_BASE_URL }}
           DEVICE_ID: ${{ inputs.device_id }}
           CHARGING_MODE: ${{ inputs.charging_mode }}
