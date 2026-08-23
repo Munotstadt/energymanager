@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
+    --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
+    --accent:#E30613; --accent-dim:#fdeceb;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --purple:#7c3aed; --teal:#0f9b8e;
+    --grid:#e8e8e8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:24px 20px 60px;}
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
+  .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px; display:flex; align-items:center; gap:8px;}
+  .live-dot{width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block; box-shadow:0 0 0 0 rgba(31,157,85,.5); animation:pulse 2s infinite;}
+  .live-dot.stale{background:var(--amber); animation:none;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(31,157,85,.45);}
+    70%{box-shadow:0 0 0 6px rgba(31,157,85,0);}
+    100%{box-shadow:0 0 0 0 rgba(31,157,85,0);}
+  }
+  h2{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1rem;
+    margin:28px 0 10px; color:var(--text);
+  }
+  h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:8px;}
+  @media(min-width:480px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
+  @media(min-width:760px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  .kpi{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:14px 16px 12px; border-left:3px solid var(--grey-300);
+  }
+  .kpi.pv{border-left-color:var(--amber);}
+  .kpi.cons{border-left-color:var(--accent);}
+  .kpi.grid-from{border-left-color:var(--accent);}
+  .kpi.grid-to{border-left-color:var(--green);}
+  .kpi.batt{border-left-color:var(--purple);}
+  .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.35rem; font-weight:600; margin-top:4px;}
+  .kpi .value small{font-size:0.7rem; color:var(--text-dim); font-weight:400;}
+  .kpi .delta{font-size:0.72rem; margin-top:3px; color:var(--text-dim);}
+
+  .card{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:16px 18px 12px; margin-bottom:6px;
+  }
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
+  .legend .item{display:flex; align-items:center; gap:5px;}
+  .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
+
+  #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
+  .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Munotstadt <span>Energy</span></div>
+  <a href="index.html" class="nav-link">&larr; Dashboard</a>
+</header>
+<div class="wrap">
+  <div>
+    <h1>Live</h1>
+    <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
+  </div>
+  <div id="status">Lade Live-Daten von Turso...</div>
+  <div id="content" style="display:none;">
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <h2>Produktion &amp; Verbrauch <span class="hint">letzte 12 Stunden</span></h2>
+    <div class="card">
+      <div class="legend" id="legendMain"></div>
+      <div id="chartMain"></div>
+    </div>
+
+    <h2>Geräte <span class="hint">letzte 12 Stunden, aktuelle Leistung</span></h2>
+    <div class="card">
+      <div class="legend" id="legendDevices"></div>
+      <div id="chartDevices"></div>
+    </div>
+
+  </div>
+  <div class="footer" id="footerInfo"></div>
+</div>
+
+<script>
+// ---------- Turso (live, read-only) ----------
+const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
+const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
+const REFRESH_MS = 60 * 1000; // 1 Minute (Live-Fetch laeuft alle 10 Min, aber wir pollen oefter fuers Gefuehl)
+
+const DEVICE_COLORS = ["#E30613","#1f6feb","#1f9d55","#b9770e","#7c3aed","#0f9b8e","#c2185b","#5d4037"];
+
+function fmt(n, digits=0){
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return n.toLocaleString('de-CH', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+}
+function fmtTime(iso){
+  try{
+    // gespeichert als UTC-ISO ohne 'Z' -> explizit als UTC parsen
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'});
+  } catch(e){ return iso; }
+}
+function toLocalDate(iso){
+  return new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+}
+
+async function fetchFromTurso(){
+  const body = {
+    requests: [
+      { type:"execute", stmt:{ sql:
+        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE fetched_at >= datetime('now','-12 hours') ORDER BY fetched_at"
+      }},
+      { type:"execute", stmt:{ sql:
+        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE fetched_at >= datetime('now','-12 hours') ORDER BY fetched_at"
+      }},
+      { type:"execute", stmt:{ sql: "SELECT device_id, Bezeichnung FROM solarmanager_devices" }},
+      { type:"close" }
+    ]
+  };
+  const res = await fetch(TURSO_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${TURSO_READONLY_TOKEN}` },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
+  const data = await res.json();
+
+  function rowsFrom(idx){
+    const result = data.results?.[idx];
+    if (result?.type === "error") throw new Error(result.error?.message || "Turso-Fehler");
+    const r = result?.response?.result;
+    if (!r || !r.rows) return [];
+    const cols = r.cols.map(c => c.name);
+    return r.rows.map(row => {
+      const obj = {};
+      row.forEach((cell, i) => { obj[cols[i]] = cell.value === undefined ? null : cell.value; });
+      return obj;
+    });
+  }
+
+  const points = rowsFrom(0).map(p => ({
+    fetched_at: p.fetched_at,
+    pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
+    consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
+    grid: p.current_grid_power === null ? null : Number(p.current_grid_power),
+    battery: p.current_battery_charge_discharge === null ? null : Number(p.current_battery_charge_discharge),
+  }));
+  const deviceReadings = rowsFrom(1).map(d => ({
+    fetched_at: d.fetched_at,
+    device_id: d.device_id,
+    power: d.current_power === null ? null : Number(d.current_power),
+  }));
+  const deviceNames = {};
+  rowsFrom(2).forEach(d => { deviceNames[d.device_id] = (d.Bezeichnung || d.device_id || '').replace(/_Wh$/,'').replace(/_/g,' '); });
+
+  return { points, deviceReadings, deviceNames };
+}
+
+// ---------- Mini SVG-Liniendiagramm (keine externe Lib, analog Bar-Chart-Stil) ----------
+function renderLineChart(containerId, series, opts={}){
+  const el = document.getElementById(containerId);
+  const w = el.clientWidth > 0 ? el.clientWidth : 640;
+  const h = opts.height || 220;
+  const padL = 42, padR = 10, padT = 12, padB = 24;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  let allTimes = [], allVals = [];
+  series.forEach(s => s.points.forEach(p => {
+    if (p.t !== null && p.t !== undefined) allTimes.push(p.t);
+    if (p.v !== null && p.v !== undefined && !isNaN(p.v)) allVals.push(p.v);
+  }));
+  if (allTimes.length === 0){
+    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Noch keine Live-Daten in diesem Zeitraum.</div>`;
+    return;
+  }
+  const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
+  let vMin = Math.min(0, ...allVals), vMax = Math.max(...allVals);
+  if (vMax === vMin){ vMax += 1; }
+  const vPad = (vMax - vMin) * 0.08;
+  vMin -= vPad; vMax += vPad;
+
+  const x = t => padL + (tMax === tMin ? plotW/2 : (t - tMin) / (tMax - tMin) * plotW);
+  const y = v => padT + plotH - (v - vMin) / (vMax - vMin) * plotH;
+
+  // Gridlines (y) + Zero-Linie
+  const yTicks = 4;
+  let gridSvg = '';
+  for (let i=0; i<=yTicks; i++){
+    const v = vMin + (vMax - vMin) * i / yTicks;
+    const yy = y(v);
+    gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}</text>`;
+  }
+  if (vMin < 0 && vMax > 0){
+    gridSvg += `<line x1="${padL}" y1="${y(0)}" x2="${w-padR}" y2="${y(0)}" stroke="var(--grey-600)" stroke-width="1"/>`;
+  }
+
+  // x-Achsen-Labels (Uhrzeit)
+  const xTicks = 6;
+  let xLabels = '';
+  for (let i=0; i<=xTicks; i++){
+    const t = tMin + (tMax - tMin) * i / xTicks;
+    xLabels += `<text x="${x(t)}" y="${h-6}" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmtTime(new Date(t).toISOString())}</text>`;
+  }
+
+  let paths = '';
+  series.forEach(s => {
+    const pts = s.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v));
+    if (pts.length === 0) return;
+    const d = pts.map((p,i) => `${i===0 ? 'M' : 'L'} ${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
+    paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${xLabels}${paths}
+  </svg>`;
+}
+
+function renderLegend(containerId, series){
+  document.getElementById(containerId).innerHTML = series.map(s =>
+    `<span class="item"><span class="sw" style="background:${s.color}"></span>${s.label}</span>`
+  ).join('');
+}
+
+// ---------- KPI-Kacheln ----------
+function renderKpis(latestPoint, latestDeviceByName){
+  const cards = [];
+  cards.push({cls:'pv', label:'PV-Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–'});
+  cards.push({cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–'});
+  if (latestPoint && latestPoint.grid !== null){
+    const fromGrid = latestPoint.grid > 0;
+    cards.push({cls: fromGrid ? 'grid-from' : 'grid-to', label: fromGrid ? 'Netzbezug' : 'Einspeisung', value: `${fmt(Math.abs(latestPoint.grid))} <small>W</small>`});
+  } else {
+    cards.push({cls:'grid-from', label:'Netz', value:'–'});
+  }
+  if (latestPoint && latestPoint.battery !== null && latestPoint.battery !== undefined){
+    const charging = latestPoint.battery > 0;
+    cards.push({cls:'batt', label: charging ? 'Batterie lädt' : 'Batterie entlädt', value: `${fmt(Math.abs(latestPoint.battery))} <small>W</small>`});
+  }
+  Object.entries(latestDeviceByName).forEach(([name, power]) => {
+    cards.push({cls:'', label:name, value: `${fmt(power)} <small>W</small>`});
+  });
+  document.getElementById('kpiGrid').innerHTML = cards.map(c => `
+    <div class="kpi ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+let refreshTimer = null;
+
+async function load(){
+  try{
+    const { points, deviceReadings, deviceNames } = await fetchFromTurso();
+
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('liveDot').classList.remove('stale');
+
+    const latestPoint = points.length ? points[points.length-1] : null;
+    const nowStr = new Date().toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('subline').textContent = latestPoint
+      ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
+      : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/1000}s · Rohdaten alle 10 Min`;
+
+    // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
+    const byDevice = {};
+    deviceReadings.forEach(r => {
+      const name = deviceNames[r.device_id] || r.device_id;
+      if (!byDevice[name]) byDevice[name] = [];
+      byDevice[name].push(r);
+    });
+    const latestDeviceByName = {};
+    Object.entries(byDevice).forEach(([name, arr]) => {
+      const last = arr[arr.length-1];
+      latestDeviceByName[name] = last ? last.power : null;
+    });
+
+    renderKpis(latestPoint, latestDeviceByName);
+
+    // Hauptchart: Produktion / Verbrauch / Netzbezug
+    const mainSeries = [
+      { label:'Produktion', color:'#b9770e', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.pv })) },
+      { label:'Verbrauch', color:'#E30613', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.consumption })) },
+      { label:'Netz (+Bezug/-Einspeisung)', color:'#1f6feb', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.grid })) },
+    ];
+    renderLegend('legendMain', mainSeries);
+    renderLineChart('chartMain', mainSeries, { height: 240 });
+
+    // Geraete-Chart
+    const deviceSeries = Object.entries(byDevice).map(([name, arr], i) => ({
+      label: name,
+      color: DEVICE_COLORS[i % DEVICE_COLORS.length],
+      points: arr.map(r => ({ t: toLocalDate(r.fetched_at).getTime(), v: r.power }))
+    }));
+    renderLegend('legendDevices', deviceSeries);
+    renderLineChart('chartDevices', deviceSeries, { height: 240 });
+
+  } catch(e){
+    console.warn("Turso-Zugriff fehlgeschlagen:", e);
+    document.getElementById('liveDot').classList.add('stale');
+    if (document.getElementById('content').style.display === 'none'){
+      document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
+    } else {
+      document.getElementById('subline').textContent = `Live-Update fehlgeschlagen (${e.message}) · zeige letzten Stand`;
+    }
+  }
+}
+
+function scheduleRefresh(){
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(load, REFRESH_MS);
+}
+
+window.addEventListener('resize', () => {
+  // Charts bei Groessenaenderung neu zeichnen (einfachste Loesung: neu laden aus letztem Stand vermeiden -> nur bei Bedarf)
+});
+
+load();
+scheduleRefresh();
+</script>
+</body>
+</html>
