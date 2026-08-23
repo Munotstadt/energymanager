@@ -40,6 +40,8 @@
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
   }
   header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .nav-links{display:flex; gap:2px;}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
   .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px;}
@@ -87,7 +89,11 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <a href="index.html" class="nav-link">&larr; Dashboard</a>
+  <div class="nav-links">
+    <a href="index.html" class="nav-link">Dashboard</a>
+    <a href="live.html" class="nav-link">Live</a>
+    <a href="car.html" class="nav-link">Auto</a>
+  </div>
 </header>
 <div class="wrap">
   <div>
@@ -98,9 +104,9 @@
   <div id="content" style="display:none;">
 
     <div class="tabs" id="rangeTabs">
-      <button class="tab" data-range="30">30T</button>
-      <button class="tab" data-range="90">90T</button>
-      <button class="tab active" data-range="365">365T</button>
+      <button type="button" class="tab" data-range="30">30T</button>
+      <button type="button" class="tab" data-range="90">90T</button>
+      <button type="button" class="tab active" data-range="365">365T</button>
     </div>
 
     <h2>Tagesübersicht <span class="hint">neuster Tag zuoberst</span></h2>
@@ -252,13 +258,12 @@ async function load(){
 }
 
 // ---------- Range tabs (bestimmen die Tabellenlaenge) ----------
-document.querySelectorAll('#rangeTabs .tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#rangeTabs .tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentRange = btn.dataset.range;
-    renderTable();
-  });
+document.getElementById('rangeTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  currentRange = tab.dataset.range;
+  document.querySelectorAll('#rangeTabs .tab').forEach(b => b.classList.toggle('active', b === tab));
+  if (DATA.length) renderTable();
 });
 
 function renderTable(){

@@ -40,6 +40,8 @@
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
   }
   header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .nav-links{display:flex; gap:2px;}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
   .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px; display:flex; align-items:center; gap:8px;}
@@ -65,13 +67,14 @@
   }
   .kpi.pv{border-left-color:var(--yellow);}
   .kpi.cons{border-left-color:var(--accent);}
-  .kpi.grid-from{border-left-color:var(--green);}
-  .kpi.grid-to{border-left-color:var(--green);}
+  .kpi.grid-from{border-left-color:var(--amber);}
+  .kpi.grid-to{border-left-color:var(--blue);}
   .kpi.batt{border-left-color:var(--purple);}
   .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
   .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.35rem; font-weight:600; margin-top:4px;}
   .kpi .value small{font-size:0.7rem; color:var(--text-dim); font-weight:400;}
   .kpi .delta{font-size:0.72rem; margin-top:3px; color:var(--text-dim);}
+  .kpi .daytotal{font-size:0.68rem; margin-top:2px; color:var(--text-dim2);}
 
   .card{
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
@@ -89,7 +92,11 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <a href="index.html" class="nav-link">&larr; Dashboard</a>
+  <div class="nav-links">
+    <a href="index.html" class="nav-link">Dashboard</a>
+    <a href="live.html" class="nav-link active">Live</a>
+    <a href="car.html" class="nav-link">Auto</a>
+  </div>
 </header>
 <div class="wrap">
   <div>
@@ -101,13 +108,13 @@
 
     <div class="kpi-grid" id="kpiGrid"></div>
 
-    <h2>Produktion &amp; Verbrauch <span class="hint">letzte 12 Stunden</span></h2>
+    <h2>Produktion &amp; Verbrauch <span class="hint">letzte 24 Stunden</span></h2>
     <div class="card">
       <div class="legend" id="legendMain"></div>
       <div id="chartMain"></div>
     </div>
 
-    <h2>Geräte <span class="hint">letzte 12 Stunden, aktuelle Leistung</span></h2>
+    <h2>Geräte <span class="hint">letzte 24 Stunden, aktuelle Leistung</span></h2>
     <div class="card">
       <div class="legend" id="legendDevices"></div>
       <div id="chartDevices"></div>
@@ -125,6 +132,15 @@ const REFRESH_MS = 15 * 60 * 1000; // 15 Minuten
 
 const DEVICE_COLORS = ["#E30613","#1f6feb","#1f9d55","#b9770e","#7c3aed","#0f9b8e","#c2185b","#5d4037"];
 
+// Geräte-IDs, die in den Live-Kacheln/Charts nicht angezeigt werden sollen
+const EXCLUDED_DEVICE_IDS = new Set([
+  "65168AB128EC518AFA0F665F",
+  "6516885AFD811A3C709C5BC2",
+  "68DD100001EB837ABD21B2FD",
+  "68DD114AE232D2C6444E11A2",
+  "658153DB411180774FE01246",
+]);
+
 function fmt(n, digits=0){
   if (n === null || n === undefined || isNaN(n)) return "–";
   return n.toLocaleString('de-CH', {minimumFractionDigits:digits, maximumFractionDigits:digits});
@@ -141,15 +157,17 @@ function toLocalDate(iso){
 }
 
 async function fetchFromTurso(){
+  const todayISO = new Date().toLocaleDateString('en-CA', {timeZone:'Europe/Zurich'});
   const body = {
     requests: [
       { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-12 hours') ORDER BY fetched_at"
+        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-24 hours') ORDER BY fetched_at"
       }},
       { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-12 hours') ORDER BY fetched_at"
+        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-24 hours') ORDER BY fetched_at"
       }},
       { type:"execute", stmt:{ sql: "SELECT device_id, Bezeichnung FROM solarmanager_devices" }},
+      { type:"execute", stmt:{ sql: `SELECT Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh, Entfeuchter_Waschen_kWh, Wasserpumpe_kWh, Ladestation_kWh FROM solarmanager_data WHERE Date_ISO = '${todayISO}'` }},
       { type:"close" }
     ]
   };
@@ -181,15 +199,28 @@ async function fetchFromTurso(){
     grid: p.current_grid_power === null ? null : Number(p.current_grid_power),
     battery: p.current_battery_charge_discharge === null ? null : Number(p.current_battery_charge_discharge),
   }));
-  const deviceReadings = rowsFrom(1).map(d => ({
-    fetched_at: d.fetched_at,
-    device_id: d.device_id,
-    power: d.current_power === null ? null : Number(d.current_power),
-  }));
+  const deviceReadings = rowsFrom(1)
+    .filter(d => !EXCLUDED_DEVICE_IDS.has(d.device_id))
+    .map(d => ({
+      fetched_at: d.fetched_at,
+      device_id: d.device_id,
+      power: d.current_power === null ? null : Number(d.current_power),
+    }));
   const deviceNames = {};
   rowsFrom(2).forEach(d => { deviceNames[d.device_id] = (d.Bezeichnung || d.device_id || '').replace(/_Wh$/,'').replace(/_/g,' '); });
 
-  return { points, deviceReadings, deviceNames };
+  const todayRow = rowsFrom(3)[0] || null;
+  const dayTotals = todayRow ? {
+    consumption: Number(todayRow.Consumption_kWh) || 0,
+    production: Number(todayRow.Production_kWh) || 0,
+    gridFrom: Number(todayRow.GridFrom_kWh) || 0,
+    gridTo: Number(todayRow.GridTo_kWh) || 0,
+    Entfeuchter: Number(todayRow.Entfeuchter_Waschen_kWh) || 0,
+    Wasserpumpe: Number(todayRow.Wasserpumpe_kWh) || 0,
+    Ladestation: Number(todayRow.Ladestation_kWh) || 0,
+  } : null;
+
+  return { points, deviceReadings, deviceNames, dayTotals };
 }
 
 // ---------- Mini SVG-Liniendiagramm (keine externe Lib, analog Bar-Chart-Stil) ----------
@@ -259,27 +290,41 @@ function renderLegend(containerId, series){
 }
 
 // ---------- KPI-Kacheln ----------
-function renderKpis(latestPoint, latestDeviceByName){
+function dayTotalHtml(kwh){
+  return kwh !== null && kwh !== undefined ? `<div class="daytotal">Tagestotal: ${fmt(kwh,1)} kWh</div>` : '';
+}
+
+function matchDeviceDayTotal(name, dayTotals){
+  if (!dayTotals) return null;
+  const n = name.toLowerCase();
+  if (n.includes('ladestation')) return dayTotals.Ladestation;
+  if (n.includes('entfeuchter') || n.includes('waschen')) return dayTotals.Entfeuchter;
+  if (n.includes('wasserpumpe')) return dayTotals.Wasserpumpe;
+  return null;
+}
+
+function renderKpis(latestPoint, latestDeviceByName, dayTotals){
   const cards = [];
-  cards.push({cls:'pv', label:'PV-Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–'});
-  cards.push({cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–'});
+  cards.push({cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–',
+    daytotal: dayTotalHtml(dayTotals ? dayTotals.consumption : null)});
+  cards.push({cls:'pv', label:'PV-Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–',
+    daytotal: dayTotalHtml(dayTotals ? dayTotals.production : null)});
   if (latestPoint && latestPoint.grid !== null){
     const fromGrid = latestPoint.grid > 0;
-    cards.push({cls: fromGrid ? 'grid-from' : 'grid-to', label: fromGrid ? 'Netzbezug' : 'Einspeisung', value: `${fmt(Math.abs(latestPoint.grid))} <small>W</small>`});
+    cards.push({cls: fromGrid ? 'grid-from' : 'grid-to', label: fromGrid ? 'Netzbezug' : 'Einspeisung', value: `${fmt(Math.abs(latestPoint.grid))} <small>W</small>`,
+      daytotal: dayTotalHtml(dayTotals ? (fromGrid ? dayTotals.gridFrom : dayTotals.gridTo) : null)});
   } else {
-    cards.push({cls:'grid-from', label:'Netz', value:'–'});
-  }
-  if (latestPoint && latestPoint.battery !== null && latestPoint.battery !== undefined){
-    const charging = latestPoint.battery > 0;
-    cards.push({cls:'batt', label: charging ? 'Batterie lädt' : 'Batterie entlädt', value: `${fmt(Math.abs(latestPoint.battery))} <small>W</small>`});
+    cards.push({cls:'grid-from', label:'Netz', value:'–', daytotal:''});
   }
   Object.entries(latestDeviceByName).forEach(([name, power]) => {
-    cards.push({cls:'', label:name, value: `${fmt(power)} <small>W</small>`});
+    cards.push({cls:'', label:name, value: `${fmt(power)} <small>W</small>`,
+      daytotal: dayTotalHtml(matchDeviceDayTotal(name, dayTotals))});
   });
   document.getElementById('kpiGrid').innerHTML = cards.map(c => `
     <div class="kpi ${c.cls}">
       <div class="label">${c.label}</div>
       <div class="value">${c.value}</div>
+      ${c.daytotal}
     </div>
   `).join('');
 }
@@ -288,7 +333,7 @@ let refreshTimer = null;
 
 async function load(){
   try{
-    const { points, deviceReadings, deviceNames } = await fetchFromTurso();
+    const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromTurso();
 
     document.getElementById('status').style.display = 'none';
     document.getElementById('content').style.display = 'block';
@@ -314,7 +359,7 @@ async function load(){
       latestDeviceByName[name] = last ? last.power : null;
     });
 
-    renderKpis(latestPoint, latestDeviceByName);
+    renderKpis(latestPoint, latestDeviceByName, dayTotals);
 
     // Hauptchart: Produktion / Verbrauch / Netzbezug
     const mainSeries = [

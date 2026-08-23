@@ -21,7 +21,7 @@
     --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
     --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
     --accent:#E30613; --accent-dim:#fdeceb;
-    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --purple:#7c3aed;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --purple:#7c3aed; --yellow:#d4a900;
     --grid:#e8e8e8;
   }
   *{box-sizing:border-box;}
@@ -41,6 +41,13 @@
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
   }
   header.topbar .upload-link:hover{background:var(--grey-100);}
+  header.topbar .nav-links{display:flex; gap:2px; margin-right:6px;}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
   .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px;}
@@ -50,9 +57,10 @@
   }
   h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
 
-  .kpi-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:8px;}
+  .kpi-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:12px;}
   @media(min-width:480px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
-  @media(min-width:760px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  .kpi-grid.kpi-grid-devices{margin-bottom:8px;}
+  @media(min-width:760px){.kpi-grid.kpi-grid-devices{grid-template-columns:repeat(4,1fr);}}
   .kpi{
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
     padding:14px 16px 12px;
@@ -109,7 +117,12 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <div style="display:flex; gap:4px;">
+  <div style="display:flex; gap:4px; align-items:center;">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link active">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="car.html" class="nav-link">Auto</a>
+    </div>
     <a href="geraete.html" class="upload-link">Geräte</a>
     <a href="solarmanageruploader.html" class="upload-link">&#8593; Upload</a>
   </div>
@@ -123,6 +136,7 @@
   <div id="content" style="display:none;">
 
     <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="kpi-grid kpi-grid-devices" id="kpiGridDevices"></div>
 
     <h2>Tagesverlauf <span class="hint">Verbrauch &amp; Produktion</span></h2>
     <div class="tabs" id="rangeTabs">
@@ -134,7 +148,7 @@
     <div class="card">
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i>Verbrauch</span>
-        <span><i class="swatch" style="background:var(--green)"></i>Produktion</span>
+        <span><i class="swatch" style="background:var(--yellow)"></i>Produktion</span>
       </div>
       <div id="chartDaily"></div>
     </div>
@@ -152,9 +166,9 @@
     <div class="card">
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i>Verbrauch</span>
-        <span><i class="swatch" style="background:var(--green)"></i>Produktion</span>
+        <span><i class="swatch" style="background:var(--yellow)"></i>Produktion</span>
         <span><i class="swatch" style="background:#8a1a1a"></i>⌀ 12M Verbrauch</span>
-        <span><i class="swatch" style="background:#0d5c33"></i>⌀ 12M Produktion</span>
+        <span><i class="swatch" style="background:#7a5c00"></i>⌀ 12M Produktion</span>
       </div>
       <div class="chart-scroll" id="chartMonthly"></div>
     </div>
@@ -297,14 +311,14 @@ function applyData(rows, sourceLabel){
 }
 
 const COLORS = {
-  consumption: "#E30613", production: "#1f9d55",
+  consumption: "#E30613", production: "#d4a900",
   gridFrom: "#b9770e", gridTo: "#1f6feb",
   entfeuchter: "#7c3aed", wasserpumpe: "#1f6feb", ladestation: "#b9770e"
 };
 const MONTH_LABELS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
 let DATA = [];
-let currentRange = "90";
+let currentRange = "30";
 let currentMetric = "Consumption_kWh";
 
 const YEAR_PALETTE = ["#E30613", "#4a9eff", "#2ecc71", "#f5a623", "#b06ff0", "#68686f"];
@@ -414,7 +428,7 @@ function renderKPIs(){
   const deltaProd = pctDelta(prod7, prodPrev7);
   const deltaAutarky = (autarky7 !== null && autarkyPrev7 !== null) ? (autarky7 - autarkyPrev7) : null;
 
-  const cards = [
+  const mainCards = [
     { label: "Verbrauch (7 Tage)", value: `${fmt(cons7)} <small>kWh</small>`,
       delta: deltaCons !== null ? `${deltaCons>=0?'+':''}${fmt(deltaCons,0)}% vs. Vorwoche` : "",
       deltaCls: deltaCons > 0 ? 'down' : 'up' },
@@ -424,19 +438,25 @@ function renderKPIs(){
     { label: "Autarkiegrad (7 Tage)", value: autarky7 !== null ? `${fmt(autarky7,0)} <small>%</small>` : "–",
       delta: deltaAutarky !== null ? `${deltaAutarky>=0?'+':''}${fmt(deltaAutarky,0)} %-Pkte vs. Vorwoche` : "",
       deltaCls: deltaAutarky >= 0 ? 'up' : 'down' },
+  ];
+
+  const deviceCards = [
     consumptionKpiCard("Other Verbrauch", other7, otherPrev7),
     consumptionKpiCard("Ladestation", ladestation7, ladestationPrev7),
     consumptionKpiCard("Wasserpumpe", wasserpumpe7, wasserpumpePrev7),
     consumptionKpiCard("Entfeuchter", entfeuchter7, entfeuchterPrev7),
   ];
 
-  document.getElementById('kpiGrid').innerHTML = cards.map(c => `
+  const renderCards = cards => cards.map(c => `
     <div class="kpi">
       <div class="label">${c.label}</div>
       <div class="value">${c.value}</div>
       ${c.delta ? `<div class="delta ${c.deltaCls}">${c.delta}</div>` : ''}
     </div>
   `).join('');
+
+  document.getElementById('kpiGrid').innerHTML = renderCards(mainCards);
+  document.getElementById('kpiGridDevices').innerHTML = renderCards(deviceCards);
 }
 
 // ---------- Reusable SVG grouped/stacked bar chart (supports negative values) ----------
@@ -640,7 +660,7 @@ function renderMonthly(){
     height: 210, scrollable: true, catWidth: 46,
     lines: [
       {field:'MA_Consumption', color:'#8a1a1a'},
-      {field:'MA_Production', color:'#0d5c33'}
+      {field:'MA_Production', color:'#7a5c00'}
     ]
   });
 }

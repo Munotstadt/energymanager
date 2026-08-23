@@ -40,6 +40,8 @@
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
   }
   header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .nav-links{display:flex; gap:2px;}
   header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
@@ -136,7 +138,11 @@
   <header class="topbar">
     <div class="brand">Munotstadt <span>Energy</span></div>
     <div class="nav-right">
-      <a href="index.html" class="nav-link">&larr; Dashboard</a>
+      <div class="nav-links">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="live.html" class="nav-link">Live</a>
+        <a href="car.html" class="nav-link active">Auto</a>
+      </div>
       <button class="ghost" style="padding:7px 12px; font-size:13px;" onclick="doLogout()">Abmelden</button>
     </div>
   </header>
@@ -379,34 +385,45 @@ function renderKpis(points, deviceRows, allRows, deviceLabel){
 
   const lastDeviceRow = deviceRows.length ? deviceRows[deviceRows.length-1] : null;
 
-  // SoC/Lademodus/Lade-Strom: ueber ALLE Geraete suchen (koennen auf
-  // einem anderen sensorId liegen als die Ladeleistung), neuester Treffer
-  // zuerst.
+  // SoC/Lademodus/Lade-Strom: zuerst gezielt beim aufgelösten Ladestations-
+  // Geraet suchen (deviceRows), da "mode"-Felder auf anderen Geraeten
+  // fälschlich gematcht werden können. Erst wenn dort nichts gefunden wird,
+  // Fallback auf die Suche über ALLE Geraete (falls SoC/Modus auf einem
+  // separaten sensorId liegt, z.B. Auto vs. Wallbox als getrennte Geraete).
+  const deviceRowsNewestFirst = [...deviceRows].reverse();
   const rowsNewestFirst = [...allRows].reverse();
-  const socRow = rowsNewestFirst.find(d => d.soc !== null);
+
+  const socRow = deviceRowsNewestFirst.find(d => d.soc !== null) || rowsNewestFirst.find(d => d.soc !== null);
   const remainingDistance = socRow ? parseRawJsonField(socRow.raw_json, ['remainingDistance']) : null;
 
   let chargingMode = null, modeRow = null;
-  for (const row of rowsNewestFirst){
+  for (const row of deviceRowsNewestFirst){
     const v = parseRawJsonField(row.raw_json, ['currentMode','chargingMode','mode']);
     if (v !== null){ chargingMode = v; modeRow = row; break; }
   }
+  if (chargingMode === null){
+    for (const row of rowsNewestFirst){
+      const v = parseRawJsonField(row.raw_json, ['currentMode','chargingMode','mode']);
+      if (v !== null){ chargingMode = v; modeRow = row; break; }
+    }
+  }
 
   const cards = [];
-  cards.push({cls:'pv', label:'Produktion', value: lastPoint ? `${fmt(lastPoint.pv)} <small>W</small>` : '–',
-    delta: `Ø 30&#39; ${fmt(pvAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
   cards.push({cls:'cons', label:'Verbrauch', value: lastPoint ? `${fmt(lastPoint.consumption)} <small>W</small>` : '–',
-    delta: `Ø 30&#39; ${fmt(consAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
-  cards.push({cls:'netto', label:'Netto (PV − Verbrauch)', value: lastNetto !== null ? `${fmt(lastNetto)} <small>W</small>` : '–',
-    delta: `Ø 30&#39; ${fmt(nettoAvg)} W`});
+    delta: `30&#39; Ø: ${fmt(consAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
+  cards.push({cls:'pv', label:'Produktion', value: lastPoint ? `${fmt(lastPoint.pv)} <small>W</small>` : '–',
+    delta: `30&#39; Ø: ${fmt(pvAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
   cards.push({cls:'charge', label: deviceLabel, value: lastDeviceRow ? `${fmt(lastDeviceRow.power)} <small>W</small>` : '–',
     delta: `${fmtTime(lastDeviceRow?.fetched_at)} Uhr`});
+  cards.push({cls:'netto', label:'Netto (PV − Verbrauch)', value: lastNetto !== null ? `${fmt(lastNetto)} <small>W</small>` : '–',
+    delta: `30&#39; Ø: ${fmt(nettoAvg)} W`});
   cards.push({cls:'soc', label:'SoC · Auto', value: socRow ? `${fmt(socRow.soc)} <small>%</small>${remainingDistance !== null ? ` <small>· ${fmt(remainingDistance)} km</small>` : ''}` : '–',
     delta: socRow ? `${fmtTime(socRow.fetched_at)} Uhr · Geraet ${socRow.device_id}` : ''});
   cards.push({cls:'mode', label:'Lademodus (aktuell)', value: chargingMode !== null ? `${MODE_LABELS[chargingMode] || chargingMode}` : '–',
     delta: modeRow ? `${fmtTime(modeRow.fetched_at)} Uhr · Geraet ${modeRow.device_id}` : ''});
 
-  if (socRow) console.log('[car.html] SoC-Geraet raw_json:', socRow.raw_json);
+  if (socRow) console.log('[car.html] SoC-Geraet raw_json:', socRow.device_id, socRow.raw_json);
+  if (modeRow) console.log('[car.html] Lademodus-Geraet raw_json:', modeRow.device_id, 'resolvedDeviceId(Ladestation):', resolvedDeviceId, modeRow.raw_json);
   if (lastDeviceRow) console.log('[car.html] Ladestation raw_json:', lastDeviceRow.raw_json);
 
   document.getElementById('kpiGrid').innerHTML = cards.map(c => `
