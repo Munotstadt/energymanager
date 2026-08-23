@@ -20,7 +20,7 @@
     --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
     --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
     --accent:#E30613; --accent-dim:#fdeceb;
-    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --purple:#7c3aed; --teal:#0f9b8e;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
     --grid:#e8e8e8;
   }
   *{box-sizing:border-box;}
@@ -63,9 +63,9 @@
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
     padding:14px 16px 12px; border-left:3px solid var(--grey-300);
   }
-  .kpi.pv{border-left-color:var(--amber);}
+  .kpi.pv{border-left-color:var(--yellow);}
   .kpi.cons{border-left-color:var(--accent);}
-  .kpi.grid-from{border-left-color:var(--accent);}
+  .kpi.grid-from{border-left-color:var(--green);}
   .kpi.grid-to{border-left-color:var(--green);}
   .kpi.batt{border-left-color:var(--purple);}
   .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
@@ -299,7 +299,7 @@ async function load(){
     document.getElementById('subline').textContent = latestPoint
       ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
       : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/1000}s · Rohdaten alle 10 Min`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 15 Min (GitHub Actions)`;
 
     // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
     const byDevice = {};
@@ -318,9 +318,9 @@ async function load(){
 
     // Hauptchart: Produktion / Verbrauch / Netzbezug
     const mainSeries = [
-      { label:'Produktion', color:'#b9770e', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.pv })) },
+      { label:'Produktion', color:'#d4a900', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.pv })) },
       { label:'Verbrauch', color:'#E30613', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.consumption })) },
-      { label:'Netz (+Bezug/-Einspeisung)', color:'#1f6feb', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.grid })) },
+      { label:'Netz (+Bezug/-Einspeisung)', color:'#1f9d55', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.grid })) },
     ];
     renderLegend('legendMain', mainSeries);
     renderLineChart('chartMain', mainSeries, { height: 240 });
