@@ -314,12 +314,21 @@ async function fetchData(){
   const ladestation = devices.find(d => (d.Bezeichnung || '').trim().toLowerCase().startsWith('ladestation'));
   resolvedDeviceId = ladestation ? ladestation.device_id : null;
 
-  const [points, deviceRows] = await tursoQuery([
+  // Alle Geraete-Zeilen im Fenster laden (nicht nur die Ladestation) --
+  // SoC/Lademodus/Lade-Strom koennen auf einem anderen sensorId liegen
+  // als die Ladeleistung (z.B. Auto vs. Wallbox als getrennte Geraete).
+  const [points, allDeviceRows] = await tursoQuery([
     `SELECT fetched_at, current_pv_generation, current_power_consumption FROM solarmanager_live_points WHERE fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`,
-    resolvedDeviceId
-      ? `SELECT fetched_at, current_power, soc, raw_json FROM solarmanager_live_devices WHERE device_id = '${safeSqlLiteral(resolvedDeviceId)}' AND fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
-      : "SELECT 1 WHERE 0"
+    `SELECT fetched_at, device_id, current_power, soc, raw_json FROM solarmanager_live_devices WHERE fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
   ]);
+
+  const allRows = allDeviceRows.map(d => ({
+    fetched_at: d.fetched_at,
+    device_id: d.device_id,
+    power: d.current_power === null ? null : Number(d.current_power),
+    soc: d.soc === null || d.soc === undefined ? null : Number(d.soc),
+    raw_json: d.raw_json,
+  }));
 
   return {
     points: points.map(p => ({
@@ -327,12 +336,8 @@ async function fetchData(){
       pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
       consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
     })),
-    deviceRows: deviceRows.map(d => ({
-      fetched_at: d.fetched_at,
-      power: d.current_power === null ? null : Number(d.current_power),
-      soc: d.soc === null || d.soc === undefined ? null : Number(d.soc),
-      raw_json: d.raw_json,
-    })),
+    deviceRows: allRows.filter(d => d.device_id === resolvedDeviceId),
+    allRows: allRows,
     deviceLabel: ladestation ? (ladestation.Bezeichnung || '').replace(/_Wh$/,'').replace(/_/g,' ').trim() : "Ladestation",
   };
 }
@@ -343,7 +348,7 @@ function avg(arr){
   return vals.reduce((a,b) => a+b, 0) / vals.length;
 }
 
-function renderKpis(points, deviceRows, deviceLabel){
+function renderKpis(points, deviceRows, allRows, deviceLabel){
   const lastPoint = points.length ? points[points.length-1] : null;
   const pvAvg = avg(points.map(p => p.pv));
   const consAvg = avg(points.map(p => p.consumption));
@@ -352,13 +357,24 @@ function renderKpis(points, deviceRows, deviceLabel){
   const nettoAvg = avg(nettoSeries);
 
   const lastDeviceRow = deviceRows.length ? deviceRows[deviceRows.length-1] : null;
-  const socRows = deviceRows.filter(d => d.soc !== null);
-  const lastSocRow = socRows.length ? socRows[socRows.length-1] : null;
 
-  let chargingMode = null, chargingCurrent = null;
-  if (lastDeviceRow){
-    chargingMode = parseRawJsonField(lastDeviceRow.raw_json, ['chargingMode','mode']);
-    chargingCurrent = parseRawJsonField(lastDeviceRow.raw_json, ['chargingCurrent','current','phaseCurrent','ampere','currentAmpere']);
+  // SoC/Lademodus/Lade-Strom: ueber ALLE Geraete suchen (koennen auf
+  // einem anderen sensorId liegen als die Ladeleistung), neuester Treffer
+  // zuerst.
+  const rowsNewestFirst = [...allRows].reverse();
+  const socRow = rowsNewestFirst.find(d => d.soc !== null);
+
+  let chargingMode = null, chargingCurrent = null, modeRow = null, currentRow = null;
+  for (const row of rowsNewestFirst){
+    if (chargingMode === null){
+      const v = parseRawJsonField(row.raw_json, ['chargingMode','mode']);
+      if (v !== null){ chargingMode = v; modeRow = row; }
+    }
+    if (chargingCurrent === null){
+      const v = parseRawJsonField(row.raw_json, ['chargingCurrent','current','phaseCurrent','ampere','currentAmpere']);
+      if (v !== null){ chargingCurrent = v; currentRow = row; }
+    }
+    if (chargingMode !== null && chargingCurrent !== null) break;
   }
 
   const cards = [];
@@ -370,10 +386,15 @@ function renderKpis(points, deviceRows, deviceLabel){
     delta: `Ø 30&#39; ${fmt(nettoAvg)} W`});
   cards.push({cls:'charge', label: deviceLabel, value: lastDeviceRow ? `${fmt(lastDeviceRow.power)} <small>W</small>` : '–',
     delta: `${fmtTime(lastDeviceRow?.fetched_at)} Uhr`});
-  cards.push({cls:'soc', label:'SoC · Auto', value: lastSocRow ? `${fmt(lastSocRow.soc)} <small>%</small>` : '–',
-    delta: `${fmtTime(lastSocRow?.fetched_at)} Uhr`});
-  cards.push({cls:'charge', label:'Lade-Strom', value: chargingCurrent !== null ? `${fmt(chargingCurrent,1)} <small>A</small>` : '–', delta:''});
-  cards.push({cls:'mode', label:'Lademodus (aktuell)', value: chargingMode !== null ? `${MODE_LABELS[chargingMode] || chargingMode}` : '–', delta:''});
+  cards.push({cls:'soc', label:'SoC · Auto', value: socRow ? `${fmt(socRow.soc)} <small>%</small>` : '–',
+    delta: socRow ? `${fmtTime(socRow.fetched_at)} Uhr · Geraet ${socRow.device_id}` : ''});
+  cards.push({cls:'charge', label:'Lade-Strom', value: chargingCurrent !== null ? `${fmt(chargingCurrent,1)} <small>A</small>` : '–',
+    delta: currentRow ? `Geraet ${currentRow.device_id}` : ''});
+  cards.push({cls:'mode', label:'Lademodus (aktuell)', value: chargingMode !== null ? `${MODE_LABELS[chargingMode] || chargingMode}` : '–',
+    delta: modeRow ? `Geraet ${modeRow.device_id}` : ''});
+
+  if (socRow) console.log('[car.html] SoC-Geraet raw_json:', socRow.raw_json);
+  if (lastDeviceRow) console.log('[car.html] Ladestation raw_json:', lastDeviceRow.raw_json);
 
   document.getElementById('kpiGrid').innerHTML = cards.map(c => `
     <div class="kpi ${c.cls}">
@@ -386,7 +407,7 @@ function renderKpis(points, deviceRows, deviceLabel){
 
 async function load(){
   try{
-    const { points, deviceRows, deviceLabel } = await fetchData();
+    const { points, deviceRows, allRows, deviceLabel } = await fetchData();
 
     document.getElementById('status').style.display = 'none';
     document.getElementById('content').style.display = 'block';
@@ -398,7 +419,7 @@ async function load(){
       : `Ladestation nicht in solarmanager_devices gefunden · aktualisiert ${nowStr}`;
     document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 15 Min (GitHub Actions)`;
 
-    renderKpis(points, deviceRows, deviceLabel);
+    renderKpis(points, deviceRows, allRows, deviceLabel);
   } catch(e){
     console.warn("Turso-Zugriff fehlgeschlagen:", e);
     document.getElementById('liveDot').classList.add('stale');
