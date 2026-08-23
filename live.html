@@ -142,13 +142,14 @@ const REFRESH_MS = 15 * 60 * 1000; // 15 Minuten
 const DEVICE_COLORS = ["#E30613","#1f6feb","#1f9d55","#b9770e","#7c3aed","#0f9b8e","#c2185b","#5d4037"];
 
 // Geräte-IDs, die in den Live-Kacheln/Charts nicht angezeigt werden sollen
+// (case-insensitiv vergleichen, da device_id in der DB kleingeschrieben ist)
 const EXCLUDED_DEVICE_IDS = new Set([
   "65168AB128EC518AFA0F665F",
   "6516885AFD811A3C709C5BC2",
   "68DD100001EB837ABD21B2FD",
   "68DD114AE232D2C6444E11A2",
   "658153DB411180774FE01246",
-]);
+].map(id => id.toLowerCase()));
 
 function fmt(n, digits=0){
   if (n === null || n === undefined || isNaN(n)) return "–";
@@ -209,7 +210,7 @@ async function fetchFromTurso(){
     battery: p.current_battery_charge_discharge === null ? null : Number(p.current_battery_charge_discharge),
   }));
   const deviceReadings = rowsFrom(1)
-    .filter(d => !EXCLUDED_DEVICE_IDS.has(d.device_id))
+    .filter(d => !EXCLUDED_DEVICE_IDS.has((d.device_id || '').toLowerCase()))
     .map(d => ({
       fetched_at: d.fetched_at,
       device_id: d.device_id,
