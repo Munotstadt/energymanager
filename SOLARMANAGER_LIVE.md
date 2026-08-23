@@ -6,7 +6,7 @@ Solarmanager-CSV-Verarbeitung (`process_solarmanager.py` →
 `solarmanager_data`-Tabelle bzw. `data/solarmanager_daily.json`) –
 diese bleibt vollständig unverändert.
 
-Diese Pipeline holt stattdessen alle 10 Minuten per GitHub Actions
+Diese Pipeline holt stattdessen alle 15 Minuten per GitHub Actions
 den **Live-Datenpunkt** direkt von der Solar Manager Cloud API
 (`GET /v1/stream/gateway/{gateway_id}`, Basic Auth mit
 `base64(email:api-key)`, getestet und bestätigt funktionierend) und
@@ -64,7 +64,7 @@ dann einfach denselben Wert verwenden bzw. wiederverwenden.)
 
 ### 4. Workflow
 `.github/workflows/fetch-solarmanager-live.yml` läuft automatisch
-alle 10 Minuten, zusätzlich manuell über "Run workflow" startbar.
+alle 15 Minuten, zusätzlich manuell über "Run workflow" startbar.
 
 ## Dashboard-Anbindung
 
