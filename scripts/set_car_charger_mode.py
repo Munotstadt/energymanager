@@ -40,7 +40,9 @@ def _env_or_default(name: str, default: str) -> str:
 
 SM_BASE_URL = _env_or_default("SM_BASE_URL", "https://cloud.solar-manager.ch")
 SM_EMAIL = os.environ["SM_EMAIL"]
-SM_API_KEY = os.environ["SM_API_KEY"]
+# Control-Endpunkte (PUT) brauchen einen Key mit Write-Scope, getrennt vom
+# read-only SM_API_KEY der Fetch-Pipelines.
+SM_API_KEY = os.environ["SM_API_KEY_WRITE"]
 
 DEVICE_ID = os.environ["DEVICE_ID"]
 CHARGING_MODE = int(os.environ["CHARGING_MODE"])
