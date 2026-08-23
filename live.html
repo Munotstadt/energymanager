@@ -42,6 +42,11 @@
   header.topbar .nav-link:hover{background:var(--grey-100);}
   header.topbar .nav-link.active{background:var(--ink); color:#fff;}
   header.topbar .nav-links{display:flex; gap:2px;}
+  header.topbar .upload-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .upload-link:hover{background:var(--grey-100);}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
   .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px; display:flex; align-items:center; gap:8px;}
@@ -92,10 +97,14 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <div class="nav-links">
-    <a href="index.html" class="nav-link">Dashboard</a>
-    <a href="live.html" class="nav-link active">Live</a>
-    <a href="car.html" class="nav-link">Auto</a>
+  <div style="display:flex; gap:4px; align-items:center;">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link active">Live</a>
+      <a href="car.html" class="nav-link">Auto</a>
+    </div>
+    <a href="geraete.html" class="upload-link">Geräte</a>
+    <a href="solarmanageruploader.html" class="upload-link">&#8593; Upload</a>
   </div>
 </header>
 <div class="wrap">
@@ -344,7 +353,7 @@ async function load(){
     document.getElementById('subline').textContent = latestPoint
       ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
       : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 5 Min (GitHub Actions)`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Rohdaten & Aktualisierung alle ${REFRESH_MS/60000} Min (GitHub Actions Cron)`;
 
     // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
     const byDevice = {};
