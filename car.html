@@ -150,6 +150,27 @@
 
       <div class="kpi-grid" id="kpiGrid"></div>
 
+      <h2>Start Charging</h2>
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="minEinspeisungInput">Minimum Einspeisung (Wh)</label>
+            <input id="minEinspeisungInput" type="number" min="0" step="50">
+          </div>
+          <div class="field">
+            <label for="maxNetzInput">Maximum Netz (Wh)</label>
+            <input id="maxNetzInput" type="number" min="0" step="50">
+          </div>
+          <button onclick="saveChargingAutomation()" id="saveAutomationBtn">Speichern</button>
+        </div>
+        <div id="automationStatus" class="status-msg"></div>
+        <div class="hint-txt">
+          <div><strong>Minimum Einspeisung:</strong> Wenn dieser Wert (Ø 30&#39;) überschritten wird UND der Lademodus aktuell "Only solar" ist, schaltet die Automation auf "Minimal &amp; Solar" (Laden startet).</div>
+          <div><strong>Maximum Netz:</strong> Wenn der Netzbezug (Ø 30&#39;) diesen Wert übersteigt UND der Lademodus aktuell "Minimal &amp; Solar" ist, schaltet die Automation zurück auf "Only solar" (Laden stoppt).</div>
+          <div style="margin-top:6px;">Prüfung läuft alle 15&#39; automatisch (GitHub Action). Andere Modi (Fast Charge, Do not charge, Target SoC, ...) werden nicht angetastet.</div>
+        </div>
+      </div>
+
       <h2>Ziel-SoC</h2>
       <div class="card">
         <div class="row">
@@ -160,7 +181,6 @@
           <button onclick="saveTargetSoc()" id="saveSocBtn">Speichern</button>
         </div>
         <div id="socStatus" class="status-msg"></div>
-        <div class="hint-txt">Wird als <code>config/car_target_soc.json</code> im Repo gespeichert (Commit via GitHub API). Wirkt sich nur aus, wenn der Lademodus "Charging Target(SoC)" aktiv ist.</div>
       </div>
 
       <h2>Lademodus ändern</h2>
@@ -243,6 +263,7 @@ function showApp(){
   load();
   scheduleRefresh();
   loadTargetSoc();
+  loadChargingAutomation();
 }
 
 // ---------- Turso (live, read-only) ----------
@@ -318,8 +339,8 @@ async function fetchData(){
   // SoC/Lademodus/Lade-Strom koennen auf einem anderen sensorId liegen
   // als die Ladeleistung (z.B. Auto vs. Wallbox als getrennte Geraete).
   const [points, allDeviceRows] = await tursoQuery([
-    `SELECT fetched_at, current_pv_generation, current_power_consumption FROM solarmanager_live_points WHERE fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`,
-    `SELECT fetched_at, device_id, current_power, soc, raw_json FROM solarmanager_live_devices WHERE fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
+    `SELECT fetched_at, current_pv_generation, current_power_consumption FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`,
+    `SELECT fetched_at, device_id, current_power, soc, raw_json FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
   ]);
 
   const allRows = allDeviceRows.map(d => ({
@@ -363,15 +384,16 @@ function renderKpis(points, deviceRows, allRows, deviceLabel){
   // zuerst.
   const rowsNewestFirst = [...allRows].reverse();
   const socRow = rowsNewestFirst.find(d => d.soc !== null);
+  const remainingDistance = socRow ? parseRawJsonField(socRow.raw_json, ['remainingDistance']) : null;
 
   let chargingMode = null, chargingCurrent = null, modeRow = null, currentRow = null;
   for (const row of rowsNewestFirst){
     if (chargingMode === null){
-      const v = parseRawJsonField(row.raw_json, ['chargingMode','mode']);
+      const v = parseRawJsonField(row.raw_json, ['currentMode','chargingMode','mode']);
       if (v !== null){ chargingMode = v; modeRow = row; }
     }
     if (chargingCurrent === null){
-      const v = parseRawJsonField(row.raw_json, ['chargingCurrent','current','phaseCurrent','ampere','currentAmpere']);
+      const v = parseRawJsonField(row.raw_json, ['targetCurrent','chargingCurrent','current','phaseCurrent','ampere','currentAmpere']);
       if (v !== null){ chargingCurrent = v; currentRow = row; }
     }
     if (chargingMode !== null && chargingCurrent !== null) break;
@@ -386,10 +408,10 @@ function renderKpis(points, deviceRows, allRows, deviceLabel){
     delta: `Ø 30&#39; ${fmt(nettoAvg)} W`});
   cards.push({cls:'charge', label: deviceLabel, value: lastDeviceRow ? `${fmt(lastDeviceRow.power)} <small>W</small>` : '–',
     delta: `${fmtTime(lastDeviceRow?.fetched_at)} Uhr`});
-  cards.push({cls:'soc', label:'SoC · Auto', value: socRow ? `${fmt(socRow.soc)} <small>%</small>` : '–',
+  cards.push({cls:'soc', label:'SoC · Auto', value: socRow ? `${fmt(socRow.soc)} <small>%</small>${remainingDistance !== null ? ` <small>· ${fmt(remainingDistance)} km</small>` : ''}` : '–',
     delta: socRow ? `${fmtTime(socRow.fetched_at)} Uhr · Geraet ${socRow.device_id}` : ''});
-  cards.push({cls:'charge', label:'Lade-Strom', value: chargingCurrent !== null ? `${fmt(chargingCurrent,1)} <small>A</small>` : '–',
-    delta: currentRow ? `Geraet ${currentRow.device_id}` : ''});
+  cards.push({cls:'charge', label:'Ziel-Strom (Ladestation)', value: chargingCurrent !== null ? `${fmt(chargingCurrent,1)} <small>A</small>` : '–',
+    delta: currentRow ? `Geraet ${currentRow.device_id} · targetCurrent` : ''});
   cards.push({cls:'mode', label:'Lademodus (aktuell)', value: chargingMode !== null ? `${MODE_LABELS[chargingMode] || chargingMode}` : '–',
     delta: modeRow ? `Geraet ${modeRow.device_id}` : ''});
 
@@ -417,7 +439,7 @@ async function load(){
     document.getElementById('subline').textContent = resolvedDeviceId
       ? `Geräte-ID: ${resolvedDeviceId} · aktualisiert ${nowStr}`
       : `Ladestation nicht in solarmanager_devices gefunden · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 15 Min (GitHub Actions)`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 5 Min (GitHub Actions)`;
 
     renderKpis(points, deviceRows, allRows, deviceLabel);
   } catch(e){
@@ -434,6 +456,74 @@ async function load(){
 function scheduleRefresh(){
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(load, REFRESH_MS);
+}
+
+// ---------- Start-Charging-Schwellen (config/car_charging_automation.json) ----------
+const AUTOMATION_CONFIG_PATH = "config/car_charging_automation.json";
+
+async function loadChargingAutomation(){
+  try{
+    const res = await fetch(`https://raw.githubusercontent.com/${OWNER_REPO}/main/${AUTOMATION_CONFIG_PATH}?_=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    document.getElementById('minEinspeisungInput').value = json.min_einspeisung_wh ?? '';
+    document.getElementById('maxNetzInput').value = json.max_netzbezug_wh ?? '';
+  } catch(e){
+    document.getElementById('automationStatus').textContent = `Konnte aktuelle Werte nicht laden (${e.message}).`;
+    document.getElementById('automationStatus').className = 'status-msg err';
+  }
+}
+
+async function saveChargingAutomation(){
+  const btn = document.getElementById('saveAutomationBtn');
+  const statusEl = document.getElementById('automationStatus');
+  const minEinspeisung = parseInt(document.getElementById('minEinspeisungInput').value, 10);
+  const maxNetz = parseInt(document.getElementById('maxNetzInput').value, 10);
+  if (isNaN(minEinspeisung) || isNaN(maxNetz) || minEinspeisung < 0 || maxNetz < 0){
+    statusEl.textContent = "Bitte gültige Werte (≥ 0) für beide Felder eingeben.";
+    statusEl.className = "status-msg err";
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = "Speichere...";
+  statusEl.className = "status-msg pending";
+  const pat = getPat();
+  const apiUrl = `https://api.github.com/repos/${OWNER_REPO}/contents/${AUTOMATION_CONFIG_PATH}`;
+  try{
+    const getRes = await fetch(`${apiUrl}?ref=main`, {
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json" }
+    });
+    if (!getRes.ok) throw new Error(`GET HTTP ${getRes.status}`);
+    const getJson = await getRes.json();
+    const sha = getJson.sha;
+
+    const newContent = JSON.stringify({
+      min_einspeisung_wh: minEinspeisung,
+      max_netzbezug_wh: maxNetz,
+      updated_at: new Date().toISOString()
+    }, null, 2) + "\n";
+    const putRes = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `car.html: Start-Charging-Schwellen aktualisiert`,
+        content: btoa(unescape(encodeURIComponent(newContent))),
+        sha: sha,
+        branch: "main"
+      })
+    });
+    if (!putRes.ok){
+      const errBody = await putRes.text();
+      throw new Error(`PUT HTTP ${putRes.status} – ${errBody.slice(0,200)}`);
+    }
+    statusEl.textContent = `Gespeichert: Min. Einspeisung ${minEinspeisung} Wh, Max. Netz ${maxNetz} Wh`;
+    statusEl.className = "status-msg ok";
+  } catch(e){
+    statusEl.textContent = `Fehler beim Speichern: ${e.message}`;
+    statusEl.className = "status-msg err";
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- Ziel-SoC (config/car_target_soc.json im Repo) ----------

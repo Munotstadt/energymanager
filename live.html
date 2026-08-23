@@ -144,10 +144,10 @@ async function fetchFromTurso(){
   const body = {
     requests: [
       { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE fetched_at >= datetime('now','-12 hours') ORDER BY fetched_at"
+        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-12 hours') ORDER BY fetched_at"
       }},
       { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE fetched_at >= datetime('now','-12 hours') ORDER BY fetched_at"
+        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-12 hours') ORDER BY fetched_at"
       }},
       { type:"execute", stmt:{ sql: "SELECT device_id, Bezeichnung FROM solarmanager_devices" }},
       { type:"close" }
@@ -299,7 +299,7 @@ async function load(){
     document.getElementById('subline').textContent = latestPoint
       ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
       : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 15 Min (GitHub Actions)`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 5 Min (GitHub Actions)`;
 
     // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
     const byDevice = {};
