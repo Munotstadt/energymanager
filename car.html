@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Auto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
+    --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
+    --accent:#E30613; --accent-dim:#fdeceb;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
+    --grid:#e8e8e8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:24px 20px 60px;}
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
+  .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px; display:flex; align-items:center; gap:8px;}
+  .live-dot{width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block; box-shadow:0 0 0 0 rgba(31,157,85,.5); animation:pulse 2s infinite;}
+  .live-dot.stale{background:var(--amber); animation:none;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(31,157,85,.45);}
+    70%{box-shadow:0 0 0 6px rgba(31,157,85,0);}
+    100%{box-shadow:0 0 0 0 rgba(31,157,85,0);}
+  }
+  h2{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1rem;
+    margin:28px 0 10px; color:var(--text);
+  }
+  h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:8px;}
+  @media(min-width:480px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
+  @media(min-width:760px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  .kpi{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:14px 16px 12px; border-left:3px solid var(--grey-300);
+  }
+  .kpi.pv{border-left-color:var(--yellow);}
+  .kpi.cons{border-left-color:var(--accent);}
+  .kpi.netto{border-left-color:var(--green);}
+  .kpi.charge{border-left-color:var(--blue);}
+  .kpi.soc{border-left-color:var(--purple);}
+  .kpi.mode{border-left-color:var(--teal);}
+  .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.35rem; font-weight:600; margin-top:4px;}
+  .kpi .value small{font-size:0.7rem; color:var(--text-dim); font-weight:400;}
+  .kpi .delta{font-size:0.72rem; margin-top:3px; color:var(--text-dim);}
+
+  .card{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:16px 18px 16px; margin-bottom:14px;
+  }
+  .card .row{display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:0.72rem; text-transform:uppercase; letter-spacing:.03em; color:var(--text-dim);}
+  .field input, .field select{
+    font-family:'IBM Plex Mono',monospace; font-size:0.9rem; padding:8px 10px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:var(--bg); color:var(--ink);
+    min-width:160px;
+  }
+  .field.narrow input{min-width:90px;}
+  button{
+    font-family:'Inter',sans-serif; font-weight:600; font-size:0.85rem;
+    background:var(--ink); color:#fff; border:none; border-radius:var(--radius);
+    padding:9px 16px; cursor:pointer;
+  }
+  button:hover{background:var(--red);}
+  button:disabled{background:var(--grey-300); color:var(--text-dim); cursor:not-allowed;}
+  button.ghost{background:transparent; color:var(--ink); border:1px solid var(--grey-300);}
+  button.ghost:hover{background:var(--grey-100); color:var(--ink);}
+  .status-msg{font-size:0.8rem; margin-top:10px; font-family:'IBM Plex Mono',monospace;}
+  .status-msg.ok{color:var(--green);}
+  .status-msg.err{color:var(--accent);}
+  .status-msg.pending{color:var(--amber);}
+  .hint-txt{color:var(--text-dim); font-size:0.78rem; margin-top:8px;}
+
+  #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
+  .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
+  a{color:var(--accent);}
+
+  /* Login gate */
+  .login-wrap{max-width:420px; margin:80px auto; padding:0 20px;}
+  .login-card{border:1px solid var(--grey-300); border-radius:var(--radius); padding:24px 22px;}
+  .login-card h1{font-size:1.2rem; margin-bottom:6px;}
+  .login-card p{color:var(--text-dim); font-size:0.85rem; margin:0 0 18px;}
+  .login-card input{width:100%; margin-bottom:12px;}
+  .login-card button{width:100%;}
+</style>
+</head>
+<body>
+
+<div id="loginGate" class="login-wrap">
+  <div class="login-card">
+    <h1>Auto-Dashboard</h1>
+    <p>Zugriff nur mit GitHub Personal Access Token (fine-grained, Repo <code>Munotstadt/energymanager</code>, Rechte: Actions Read/Write, Contents Read/Write).</p>
+    <div class="field" style="margin-bottom:0;">
+      <label for="loginLabel">Label (optional, nur lokal)</label>
+      <input id="loginLabel" type="text" placeholder="z.B. iPhone">
+    </div>
+    <input id="loginPat" type="password" placeholder="GitHub Token (ghp_... / github_pat_...)">
+    <button id="loginBtn" onclick="doLogin()">Anmelden</button>
+    <div id="loginStatus" class="status-msg"></div>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
+  <header class="topbar">
+    <div class="brand">Munotstadt <span>Energy</span></div>
+    <div class="nav-right">
+      <a href="index.html" class="nav-link">&larr; Dashboard</a>
+      <button class="ghost" style="padding:7px 12px; font-size:13px;" onclick="doLogout()">Abmelden</button>
+    </div>
+  </header>
+  <div class="wrap">
+    <div>
+      <h1>Auto</h1>
+      <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
+    </div>
+    <div id="status">Lade Live-Daten von Turso...</div>
+    <div id="content" style="display:none;">
+
+      <div class="kpi-grid" id="kpiGrid"></div>
+
+      <h2>Ziel-SoC</h2>
+      <div class="card">
+        <div class="row">
+          <div class="field narrow">
+            <label for="targetSocInput">Ziel-SoC (%)</label>
+            <input id="targetSocInput" type="number" min="0" max="100" step="1">
+          </div>
+          <button onclick="saveTargetSoc()" id="saveSocBtn">Speichern</button>
+        </div>
+        <div id="socStatus" class="status-msg"></div>
+        <div class="hint-txt">Wird als <code>config/car_target_soc.json</code> im Repo gespeichert (Commit via GitHub API). Wirkt sich nur aus, wenn der Lademodus "Charging Target(SoC)" aktiv ist.</div>
+      </div>
+
+      <h2>Lademodus ändern</h2>
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="modeSelect">Modus</label>
+            <select id="modeSelect" onchange="onModeChange()">
+              <option value="0">0 · Fast Charge</option>
+              <option value="1">1 · Only solar</option>
+              <option value="2">2 · Solar &amp; tariff optimized</option>
+              <option value="3">3 · Do not charge</option>
+              <option value="4">4 · Constant current</option>
+              <option value="5">5 · Minimal &amp; Solar</option>
+              <option value="6">6 · Charging Target (kWh)</option>
+              <option value="7">7 · Charging Target (SoC)</option>
+              <option value="8">8 · Aria</option>
+            </select>
+          </div>
+          <div class="field narrow" id="fieldConstCurrent" style="display:none;">
+            <label for="constCurrentInput">Konstantstrom (A)</label>
+            <input id="constCurrentInput" type="number" min="6" max="32" step="1" value="16">
+          </div>
+          <div class="field narrow" id="fieldModeSoc" style="display:none;">
+            <label for="modeSocInput">Ziel-SoC (%)</label>
+            <input id="modeSocInput" type="number" min="0" max="100" step="1" value="80">
+          </div>
+          <button onclick="applyChargingMode()" id="applyModeBtn">Senden</button>
+        </div>
+        <div id="modeStatus" class="status-msg"></div>
+        <div class="hint-txt">Löst einen GitHub-Action-Workflow aus (<code>car-charger-control.yml</code>), der den Solar-Manager-API-Call serverseitig ausführt. Änderung dauert i.d.R. 20–40 Sekunden.</div>
+      </div>
+
+    </div>
+    <div class="footer" id="footerInfo"></div>
+  </div>
+</div>
+
+<script>
+// ---------- Repo / Auth ----------
+const OWNER_REPO = "Munotstadt/energymanager";
+const WORKFLOW_FILE = "car-charger-control.yml";
+const CONFIG_PATH = "config/car_target_soc.json";
+const PAT_KEY = "mst_car_pat";
+const LABEL_KEY = "mst_car_label";
+
+function getPat(){ return localStorage.getItem(PAT_KEY) || ""; }
+
+async function doLogin(){
+  const pat = document.getElementById('loginPat').value.trim();
+  const label = document.getElementById('loginLabel').value.trim();
+  const statusEl = document.getElementById('loginStatus');
+  if (!pat){ statusEl.textContent = "Bitte Token eingeben."; statusEl.className = "status-msg err"; return; }
+  statusEl.textContent = "Prüfe Token...";
+  statusEl.className = "status-msg pending";
+  try{
+    const res = await fetch(`https://api.github.com/repos/${OWNER_REPO}`, {
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json" }
+    });
+    if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+    localStorage.setItem(PAT_KEY, pat);
+    if (label) localStorage.setItem(LABEL_KEY, label);
+    showApp();
+  } catch(e){
+    statusEl.textContent = `Token ungültig oder ohne Zugriff (${e.message}).`;
+    statusEl.className = "status-msg err";
+  }
+}
+
+function doLogout(){
+  localStorage.removeItem(PAT_KEY);
+  localStorage.removeItem(LABEL_KEY);
+  document.getElementById('appRoot').style.display = 'none';
+  document.getElementById('loginGate').style.display = 'block';
+}
+
+function showApp(){
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+  load();
+  scheduleRefresh();
+  loadTargetSoc();
+}
+
+// ---------- Turso (live, read-only) ----------
+const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
+const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
+const REFRESH_MS = 5 * 60 * 1000; // 5 Minuten (Auto-Dashboard etwas engmaschiger)
+const AVG_WINDOW_MIN = 30;
+
+let refreshTimer = null;
+let resolvedDeviceId = null;
+
+function fmt(n, digits=0){
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return n.toLocaleString('de-CH', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+}
+function fmtTime(iso){
+  if (!iso) return "–";
+  try{
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'});
+  } catch(e){ return iso; }
+}
+
+async function tursoQuery(statements){
+  const body = { requests: [...statements.map(sql => ({ type:"execute", stmt:{ sql } })), { type:"close" }] };
+  const res = await fetch(TURSO_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${TURSO_READONLY_TOKEN}` },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
+  const data = await res.json();
+  return statements.map((_, idx) => {
+    const result = data.results?.[idx];
+    if (result?.type === "error") throw new Error(result.error?.message || "Turso-Fehler");
+    const r = result?.response?.result;
+    if (!r || !r.rows) return [];
+    const cols = r.cols.map(c => c.name);
+    return r.rows.map(row => {
+      const obj = {};
+      row.forEach((cell, i) => { obj[cols[i]] = cell.value === undefined ? null : cell.value; });
+      return obj;
+    });
+  });
+}
+
+function safeSqlLiteral(s){
+  return String(s).replace(/'/g, "''");
+}
+
+function parseRawJsonField(rawJson, keys){
+  if (!rawJson) return null;
+  let obj;
+  try{ obj = JSON.parse(rawJson); } catch(e){ return null; }
+  for (const k of keys){
+    if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+  }
+  return null;
+}
+
+const MODE_LABELS = {
+  0:"Fast Charge", 1:"Only solar", 2:"Solar & tariff optimized", 3:"Do not charge",
+  4:"Constant current", 5:"Minimal & Solar", 6:"Charging Target(kWh)", 7:"Charging Target(SoC)", 8:"Aria"
+};
+
+async function fetchData(){
+  // 1. Ladestation-Geraet auflösen (device_id ueber Bezeichnung)
+  const [devices] = await tursoQuery(["SELECT device_id, Bezeichnung FROM solarmanager_devices"]);
+  const ladestation = devices.find(d => (d.Bezeichnung || '').trim().toLowerCase().startsWith('ladestation'));
+  resolvedDeviceId = ladestation ? ladestation.device_id : null;
+
+  const [points, deviceRows] = await tursoQuery([
+    `SELECT fetched_at, current_pv_generation, current_power_consumption FROM solarmanager_live_points WHERE fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`,
+    resolvedDeviceId
+      ? `SELECT fetched_at, current_power, soc, raw_json FROM solarmanager_live_devices WHERE device_id = '${safeSqlLiteral(resolvedDeviceId)}' AND fetched_at >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
+      : "SELECT 1 WHERE 0"
+  ]);
+
+  return {
+    points: points.map(p => ({
+      fetched_at: p.fetched_at,
+      pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
+      consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
+    })),
+    deviceRows: deviceRows.map(d => ({
+      fetched_at: d.fetched_at,
+      power: d.current_power === null ? null : Number(d.current_power),
+      soc: d.soc === null || d.soc === undefined ? null : Number(d.soc),
+      raw_json: d.raw_json,
+    })),
+    deviceLabel: ladestation ? (ladestation.Bezeichnung || '').replace(/_Wh$/,'').replace(/_/g,' ').trim() : "Ladestation",
+  };
+}
+
+function avg(arr){
+  const vals = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+  if (!vals.length) return null;
+  return vals.reduce((a,b) => a+b, 0) / vals.length;
+}
+
+function renderKpis(points, deviceRows, deviceLabel){
+  const lastPoint = points.length ? points[points.length-1] : null;
+  const pvAvg = avg(points.map(p => p.pv));
+  const consAvg = avg(points.map(p => p.consumption));
+  const nettoSeries = points.map(p => (p.pv !== null && p.consumption !== null) ? (p.pv - p.consumption) : null);
+  const lastNetto = nettoSeries.length ? nettoSeries[nettoSeries.length-1] : null;
+  const nettoAvg = avg(nettoSeries);
+
+  const lastDeviceRow = deviceRows.length ? deviceRows[deviceRows.length-1] : null;
+  const socRows = deviceRows.filter(d => d.soc !== null);
+  const lastSocRow = socRows.length ? socRows[socRows.length-1] : null;
+
+  let chargingMode = null, chargingCurrent = null;
+  if (lastDeviceRow){
+    chargingMode = parseRawJsonField(lastDeviceRow.raw_json, ['chargingMode','mode']);
+    chargingCurrent = parseRawJsonField(lastDeviceRow.raw_json, ['chargingCurrent','current','phaseCurrent','ampere','currentAmpere']);
+  }
+
+  const cards = [];
+  cards.push({cls:'pv', label:'Produktion', value: lastPoint ? `${fmt(lastPoint.pv)} <small>W</small>` : '–',
+    delta: `Ø 30&#39; ${fmt(pvAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
+  cards.push({cls:'cons', label:'Verbrauch', value: lastPoint ? `${fmt(lastPoint.consumption)} <small>W</small>` : '–',
+    delta: `Ø 30&#39; ${fmt(consAvg)} W · ${fmtTime(lastPoint?.fetched_at)} Uhr`});
+  cards.push({cls:'netto', label:'Netto (PV − Verbrauch)', value: lastNetto !== null ? `${fmt(lastNetto)} <small>W</small>` : '–',
+    delta: `Ø 30&#39; ${fmt(nettoAvg)} W`});
+  cards.push({cls:'charge', label: deviceLabel, value: lastDeviceRow ? `${fmt(lastDeviceRow.power)} <small>W</small>` : '–',
+    delta: `${fmtTime(lastDeviceRow?.fetched_at)} Uhr`});
+  cards.push({cls:'soc', label:'SoC · Auto', value: lastSocRow ? `${fmt(lastSocRow.soc)} <small>%</small>` : '–',
+    delta: `${fmtTime(lastSocRow?.fetched_at)} Uhr`});
+  cards.push({cls:'charge', label:'Lade-Strom', value: chargingCurrent !== null ? `${fmt(chargingCurrent,1)} <small>A</small>` : '–', delta:''});
+  cards.push({cls:'mode', label:'Lademodus (aktuell)', value: chargingMode !== null ? `${MODE_LABELS[chargingMode] || chargingMode}` : '–', delta:''});
+
+  document.getElementById('kpiGrid').innerHTML = cards.map(c => `
+    <div class="kpi ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.delta ? `<div class="delta">${c.delta}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function load(){
+  try{
+    const { points, deviceRows, deviceLabel } = await fetchData();
+
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('liveDot').classList.remove('stale');
+
+    const nowStr = new Date().toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('subline').textContent = resolvedDeviceId
+      ? `Geräte-ID: ${resolvedDeviceId} · aktualisiert ${nowStr}`
+      : `Ladestation nicht in solarmanager_devices gefunden · aktualisiert ${nowStr}`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 15 Min (GitHub Actions)`;
+
+    renderKpis(points, deviceRows, deviceLabel);
+  } catch(e){
+    console.warn("Turso-Zugriff fehlgeschlagen:", e);
+    document.getElementById('liveDot').classList.add('stale');
+    if (document.getElementById('content').style.display === 'none'){
+      document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
+    } else {
+      document.getElementById('subline').textContent = `Update fehlgeschlagen (${e.message}) · zeige letzten Stand`;
+    }
+  }
+}
+
+function scheduleRefresh(){
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(load, REFRESH_MS);
+}
+
+// ---------- Ziel-SoC (config/car_target_soc.json im Repo) ----------
+async function loadTargetSoc(){
+  try{
+    const res = await fetch(`https://raw.githubusercontent.com/${OWNER_REPO}/main/${CONFIG_PATH}?_=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    document.getElementById('targetSocInput').value = json.target_soc_percent ?? '';
+  } catch(e){
+    document.getElementById('socStatus').textContent = `Konnte aktuellen Wert nicht laden (${e.message}).`;
+    document.getElementById('socStatus').className = 'status-msg err';
+  }
+}
+
+async function saveTargetSoc(){
+  const btn = document.getElementById('saveSocBtn');
+  const statusEl = document.getElementById('socStatus');
+  const val = parseInt(document.getElementById('targetSocInput').value, 10);
+  if (isNaN(val) || val < 0 || val > 100){
+    statusEl.textContent = "Bitte einen Wert zwischen 0 und 100 eingeben.";
+    statusEl.className = "status-msg err";
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = "Speichere...";
+  statusEl.className = "status-msg pending";
+  const pat = getPat();
+  const apiUrl = `https://api.github.com/repos/${OWNER_REPO}/contents/${CONFIG_PATH}`;
+  try{
+    const getRes = await fetch(`${apiUrl}?ref=main`, {
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json" }
+    });
+    if (!getRes.ok) throw new Error(`GET HTTP ${getRes.status}`);
+    const getJson = await getRes.json();
+    const sha = getJson.sha;
+
+    const newContent = JSON.stringify({ target_soc_percent: val, updated_at: new Date().toISOString() }, null, 2) + "\n";
+    const putRes = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `car.html: Ziel-SoC auf ${val}% gesetzt`,
+        content: btoa(unescape(encodeURIComponent(newContent))),
+        sha: sha,
+        branch: "main"
+      })
+    });
+    if (!putRes.ok){
+      const errBody = await putRes.text();
+      throw new Error(`PUT HTTP ${putRes.status} – ${errBody.slice(0,200)}`);
+    }
+    statusEl.textContent = `Gespeichert: ${val}%`;
+    statusEl.className = "status-msg ok";
+  } catch(e){
+    statusEl.textContent = `Fehler beim Speichern: ${e.message}`;
+    statusEl.className = "status-msg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Lademodus ändern (GitHub Action) ----------
+function onModeChange(){
+  const mode = document.getElementById('modeSelect').value;
+  document.getElementById('fieldConstCurrent').style.display = (mode === '4') ? 'flex' : 'none';
+  document.getElementById('fieldModeSoc').style.display = (mode === '7') ? 'flex' : 'none';
+}
+
+async function applyChargingMode(){
+  const btn = document.getElementById('applyModeBtn');
+  const statusEl = document.getElementById('modeStatus');
+  if (!resolvedDeviceId){
+    statusEl.textContent = "Geräte-ID der Ladestation nicht bekannt (siehe oben) — Aktion nicht möglich.";
+    statusEl.className = "status-msg err";
+    return;
+  }
+  const mode = document.getElementById('modeSelect').value;
+  const inputs = { device_id: resolvedDeviceId, charging_mode: mode };
+  if (mode === '4') inputs.constant_current = document.getElementById('constCurrentInput').value;
+  if (mode === '7') inputs.target_soc = document.getElementById('modeSocInput').value;
+
+  btn.disabled = true;
+  statusEl.textContent = "Sende Befehl...";
+  statusEl.className = "status-msg pending";
+  const pat = getPat();
+  try{
+    const res = await fetch(`https://api.github.com/repos/${OWNER_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+      method: "POST",
+      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs })
+    });
+    if (res.status !== 204){
+      const errBody = await res.text();
+      throw new Error(`HTTP ${res.status} – ${errBody.slice(0,200)}`);
+    }
+    statusEl.innerHTML = `Befehl gesendet (Modus ${mode} · ${MODE_LABELS[parseInt(mode,10)]}). <a href="https://github.com/${OWNER_REPO}/actions/workflows/${WORKFLOW_FILE}" target="_blank" rel="noopener">Status in GitHub Actions ansehen &rarr;</a>`;
+    statusEl.className = "status-msg ok";
+  } catch(e){
+    statusEl.textContent = `Fehler beim Senden: ${e.message}`;
+    statusEl.className = "status-msg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Init ----------
+if (getPat()){
+  showApp();
+} else {
+  document.getElementById('loginGate').style.display = 'block';
+}
+</script>
+</body>
+</html>
