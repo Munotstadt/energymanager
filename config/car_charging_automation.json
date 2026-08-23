@@ -1,0 +1,5 @@
+{
+  "min_einspeisung_wh": 1000,
+  "max_netzbezug_wh": 500,
+  "updated_at": null
+}
