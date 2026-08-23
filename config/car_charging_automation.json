@@ -1,5 +1,5 @@
 {
   "min_einspeisung_wh": 1,
-  "max_netzbezug_wh": 1,
-  "updated_at": "2026-08-23T10:18:31.931Z"
+  "max_netzbezug_wh": 1500,
+  "updated_at": "2026-08-23T10:20:14.071Z"
 }
