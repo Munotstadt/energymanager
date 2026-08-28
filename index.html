@@ -234,13 +234,11 @@
 </div>
 
 <script>
-const JSON_PATH = "data/solarmanager_daily.json";
-
-// ---------- Turso (live) ----------
-// Read-only Token via `turso db tokens create munotstadtenergydb --read-only --expiration never`
-const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
-const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
-const TURSO_NUMERIC_COLS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Entfeuchter_Waschen_kWh","Wasserpumpe_kWh","Ladestation_kWh"];
+// ---------- Cloudflare Worker API (D1) ----------
+// energymanager-api liefert dieselben Spalten wie bisher Turso, unter
+// /api/data/solarmanager_data. Ersetzt Turso-Live-Zugriff + JSON-Fallback.
+const API_URL = "https://api.energy.munot.app/api/data/solarmanager_data";
+const API_NUMERIC_COLS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Entfeuchter_Waschen_kWh","Wasserpumpe_kWh","Ladestation_kWh"];
 
 const CACHE_KEY = "munotstadt_solarmanager_cache_v1";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 Minuten
@@ -256,43 +254,17 @@ function writeCache(rows){
   catch(e){ /* best effort, z.B. Storage voll */ }
 }
 
-async function fetchFromTurso(){
-  const body = {
-    requests: [
-      { type:"execute", stmt:{ sql:
-        "SELECT Date_ISO, Date_Display, Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh, Entfeuchter_Waschen_kWh, Wasserpumpe_kWh, Ladestation_kWh, updated_at FROM solarmanager_data ORDER BY Date_ISO"
-      }},
-      { type:"close" }
-    ]
-  };
-  const res = await fetch(TURSO_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${TURSO_READONLY_TOKEN}` },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
-  const data = await res.json();
-  const result = data.results?.[0];
-  if (result?.type === "error") throw new Error(result.error?.message || "Turso-Fehler");
-  const r = result?.response?.result;
-  if (!r || !r.rows) return [];
-  const cols = r.cols.map(c => c.name);
-  return r.rows.map(row => {
-    const obj = {};
-    row.forEach((cell, i) => {
-      const key = cols[i];
-      const raw = cell.value === undefined ? null : cell.value;
-      obj[key] = (raw !== null && TURSO_NUMERIC_COLS.includes(key)) ? Number(raw) : raw;
-    });
+async function fetchFromApi(){
+  const res = await fetch(API_URL, {cache:"no-store"});
+  if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+  const payload = await res.json();
+  return (payload.data || []).map(row => {
+    const obj = {...row};
+    for (const key of API_NUMERIC_COLS){
+      if (obj[key] !== null && obj[key] !== undefined) obj[key] = Number(obj[key]);
+    }
     return obj;
   });
-}
-
-async function fetchFromJsonFallback(){
-  const res = await fetch(JSON_PATH, {cache:"no-store"});
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const payload = await res.json();
-  return payload.data || [];
 }
 
 function applyData(rows, sourceLabel){
@@ -340,28 +312,23 @@ async function load(){
   const cached = readCache();
   let shownFromCache = false;
   if (cached && cached.rows && cached.rows.length){
-    applyData(cached.rows, `Turso (Cache · ${new Date(cached.ts).toLocaleTimeString('de-CH')})`);
+    applyData(cached.rows, `Cache · ${new Date(cached.ts).toLocaleTimeString('de-CH')}`);
     shownFromCache = true;
   }
 
   const isFresh = cached && (Date.now() - cached.ts < CACHE_TTL_MS);
   if (isFresh) return; // Cache noch innerhalb TTL, kein Reload nötig
 
-  // 2) Im Hintergrund (bzw. beim ersten Laden direkt sichtbar) neu von Turso laden
+  // 2) Im Hintergrund (bzw. beim ersten Laden direkt sichtbar) neu laden
   try{
-    const rows = await fetchFromTurso();
-    if (rows.length === 0) throw new Error("Keine Daten von Turso erhalten");
+    const rows = await fetchFromApi();
+    if (rows.length === 0) throw new Error("Keine Daten von der API erhalten");
     writeCache(rows);
-    applyData(rows, "Turso (live)");
+    applyData(rows, "energymanager-api (live)");
   } catch(e){
-    console.warn("Turso-Zugriff fehlgeschlagen, Fallback:", e);
+    console.warn("API-Zugriff fehlgeschlagen:", e);
     if (!shownFromCache){
-      try{
-        const rows = await fetchFromJsonFallback();
-        applyData(rows, "JSON-Fallback (Turso nicht erreichbar)");
-      } catch(e2){
-        document.getElementById('status').textContent = `Fehler beim Laden: ${e2.message}`;
-      }
+      document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
     } else {
       const footer = document.getElementById('footerInfo');
       footer.textContent += " · Live-Update fehlgeschlagen, zeige Cache";

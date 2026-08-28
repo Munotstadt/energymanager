@@ -228,7 +228,7 @@
 <script>
 // ---------- Repo / Auth ----------
 const OWNER_REPO = "Munotstadt/energymanager";
-const WORKFLOW_FILE = "car-charger-control.yml";
+const API_BASE = "https://api.energy.munot.app";
 const CONFIG_PATH = "config/car_target_soc.json";
 const PAT_KEY = "mst_car_pat";
 const LABEL_KEY = "mst_car_label";
@@ -602,25 +602,26 @@ async function applyChargingMode(){
     return;
   }
   const mode = document.getElementById('modeSelect').value;
-  const inputs = { device_id: resolvedDeviceId, charging_mode: mode };
-  if (mode === '4') inputs.constant_current = document.getElementById('constCurrentInput').value;
-  if (mode === '7') inputs.target_soc = document.getElementById('modeSocInput').value;
+  const body = { device_id: resolvedDeviceId, charging_mode: parseInt(mode, 10) };
+  if (mode === '4') body.constant_current = document.getElementById('constCurrentInput').value;
+  if (mode === '7') body.target_soc = document.getElementById('modeSocInput').value;
 
   btn.disabled = true;
   statusEl.textContent = "Sende Befehl...";
   statusEl.className = "status-msg pending";
-  const pat = getPat();
+  // Wiederverwendet dasselbe gespeicherte Secret-Feld (bisher GitHub-PAT) als
+  // Admin-Secret fuer energymanager-api -- x-admin-secret muss mit dem
+  // UPLOAD_SHARED_SECRET des Workers uebereinstimmen.
+  const adminSecret = getPat();
   try{
-    const res = await fetch(`https://api.github.com/repos/${OWNER_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+    const res = await fetch(`${API_BASE}/api/admin/car-charger-control`, {
       method: "POST",
-      headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github+json", "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main", inputs })
+      headers: { "Content-Type": "application/json", "x-admin-secret": adminSecret },
+      body: JSON.stringify(body)
     });
-    if (res.status !== 204){
-      const errBody = await res.text();
-      throw new Error(`HTTP ${res.status} – ${errBody.slice(0,200)}`);
-    }
-    statusEl.innerHTML = `Befehl gesendet (Modus ${mode} · ${MODE_LABELS[parseInt(mode,10)]}). <a href="https://github.com/${OWNER_REPO}/actions/workflows/${WORKFLOW_FILE}" target="_blank" rel="noopener">Status in GitHub Actions ansehen &rarr;</a>`;
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    statusEl.textContent = `Befehl ausgeführt (Modus ${mode} · ${MODE_LABELS[parseInt(mode,10)]}).`;
     statusEl.className = "status-msg ok";
   } catch(e){
     statusEl.textContent = `Fehler beim Senden: ${e.message}`;

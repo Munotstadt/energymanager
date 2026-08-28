@@ -90,14 +90,14 @@
 </header>
 <div class="wrap">
   <h1>Energie-Daten Upload</h1>
-  <div class="sub">CSV-Exports hochladen &middot; wird automatisch verarbeitet und in Turso gespeichert</div>
+  <div class="sub">CSV-Exports hochladen &middot; wird direkt verarbeitet und in D1 gespeichert</div>
 
   <div class="card">
-    <label for="pat">GitHub Personal Access Token</label>
-    <input type="password" id="pat" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+    <label for="pat">Admin-Secret</label>
+    <input type="password" id="pat" placeholder="Admin-Secret" autocomplete="off">
     <div class="row">
       <input type="checkbox" id="remember">
-      <label for="remember">Token in diesem Browser merken</label>
+      <label for="remember">Secret in diesem Browser merken</label>
     </div>
     <div class="filename" style="margin-top:8px;">Wird für beide Uploads unten verwendet.</div>
   </div>
@@ -127,40 +127,27 @@
   </section>
 
   <div class="footer">
-    Repo: <a href="https://github.com/Munotstadt/Munotstadt_EnergyManager" target="_blank">Munotstadt/Munotstadt_EnergyManager</a><br>
-    Nach dem Upload läuft die Verarbeitung automatisch per GitHub Actions (ca. 1&ndash;2 Min).<br>
+    Repo: <a href="https://github.com/Munotstadt/energymanager" target="_blank">Munotstadt/energymanager</a><br>
+    Verarbeitung erfolgt sofort im Cloudflare Worker (energymanager-api), kein Warten auf Actions mehr.<br>
     Mehrfaches Hochladen derselben Tage ist unkritisch &ndash; bestehende Einträge werden überschrieben, es entstehen keine Duplikate.
   </div>
 </div>
 
 <script>
-const OWNER = "Munotstadt";
-const REPO = "Munotstadt_EnergyManager";
-const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents`;
+const API_BASE = "https://api.energy.munot.app";
 
 const patInput = document.getElementById('pat');
 const rememberBox = document.getElementById('remember');
 
-// Gespeichertes Token laden
-const saved = localStorage.getItem('solarmanager_pat');
+// Gespeichertes Secret laden
+const saved = localStorage.getItem('solarmanager_admin_secret');
 if (saved) { patInput.value = saved; rememberBox.checked = true; }
 
 rememberBox.addEventListener('change', () => {
-  if (!rememberBox.checked) localStorage.removeItem('solarmanager_pat');
+  if (!rememberBox.checked) localStorage.removeItem('solarmanager_admin_secret');
 });
 
-function pad(n){ return String(n).padStart(2,'0'); }
-
-function toBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function setupUploader({ fileInputId, filenameId, buttonId, statusId, targetFolder, commitLabel }) {
+function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, label }) {
   const fileInput = document.getElementById(fileInputId);
   const filenameEl = document.getElementById(filenameId);
   const statusEl = document.getElementById(statusId);
@@ -177,46 +164,39 @@ function setupUploader({ fileInputId, filenameId, buttonId, statusId, targetFold
   }
 
   btn.addEventListener('click', async () => {
-    const token = patInput.value.trim();
+    const secret = patInput.value.trim();
     const file = fileInput.files[0];
 
-    if (!token) { setStatus('Bitte GitHub Token eingeben.', 'err'); return; }
+    if (!secret) { setStatus('Bitte Admin-Secret eingeben.', 'err'); return; }
     if (!file) { setStatus('Bitte zuerst eine CSV-Datei auswählen.', 'err'); return; }
     if (!file.name.toLowerCase().endsWith('.csv')) { setStatus('Nur .csv Dateien werden unterstützt.', 'err'); return; }
 
-    if (rememberBox.checked) localStorage.setItem('solarmanager_pat', token);
+    if (rememberBox.checked) localStorage.setItem('solarmanager_admin_secret', secret);
 
     btn.disabled = true;
     setStatus('Lese Datei...', 'warn');
 
     try {
-      const b64 = await toBase64(file);
-      const now = new Date();
-      const stamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `${targetFolder}/${stamp}_${safeName}`;
+      const csvText = await file.text();
 
-      setStatus('Lade zu GitHub hoch...', 'warn');
+      setStatus(`Sende ${label}-CSV an Worker...`, 'warn');
 
-      const res = await fetch(`${API}/${encodeURIComponent(path)}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/vnd.github+json'
+          'Content-Type': 'text/csv',
+          'x-admin-secret': secret
         },
-        body: JSON.stringify({
-          message: `${commitLabel}: ${safeName}`,
-          content: b64
-        })
+        body: csvText
       });
 
+      const result = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(`GitHub API ${res.status}: ${err.message || 'Unbekannter Fehler'}`);
+        throw new Error(result.error || `Worker HTTP ${res.status}`);
       }
 
       setStatus(
-        `Upload erfolgreich!\nDatei: ${path}\n\nDie Verarbeitung startet automatisch (GitHub Actions).\nStatus: https://github.com/${OWNER}/${REPO}/actions`,
+        `Upload erfolgreich!\n${result.days_written ?? 0} Tageswert(e) geschrieben.`,
         'ok'
       );
       fileInput.value = '';
@@ -232,13 +212,13 @@ function setupUploader({ fileInputId, filenameId, buttonId, statusId, targetFold
 setupUploader({
   fileInputId: 'file-solarmanager', filenameId: 'filename-solarmanager',
   buttonId: 'btn-solarmanager', statusId: 'status-solarmanager',
-  targetFolder: 'uploads', commitLabel: 'Solarmanager Upload'
+  endpoint: '/api/upload/solarmanager', label: 'Solarmanager'
 });
 
 setupUploader({
   fileInputId: 'file-kostal', filenameId: 'filename-kostal',
   buttonId: 'btn-kostal', statusId: 'status-kostal',
-  targetFolder: 'uploads_kostal', commitLabel: 'Kostal Upload'
+  endpoint: '/api/upload/kostal', label: 'Kostal'
 });
 </script>
 </body>
