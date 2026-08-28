@@ -150,7 +150,7 @@
       <h1>Auto</h1>
       <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
     </div>
-    <div id="status">Lade Live-Daten von Turso...</div>
+    <div id="status">Lade Live-Daten...</div>
     <div id="content" style="display:none;">
 
       <div class="kpi-grid" id="kpiGrid"></div>
@@ -237,11 +237,8 @@ function showApp(){
   loadChargingAutomation();
 }
 
-// ---------- Turso (live, read-only) ----------
-const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
-const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
+// ---------- Cloudflare Worker API (D1) ----------
 const REFRESH_MS = 5 * 60 * 1000; // 5 Minuten (Auto-Dashboard etwas engmaschiger)
-const AVG_WINDOW_MIN = 30;
 
 let refreshTimer = null;
 let resolvedDeviceId = null;
@@ -256,33 +253,6 @@ function fmtTime(iso){
     const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
     return d.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'});
   } catch(e){ return iso; }
-}
-
-async function tursoQuery(statements){
-  const body = { requests: [...statements.map(sql => ({ type:"execute", stmt:{ sql } })), { type:"close" }] };
-  const res = await fetch(TURSO_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${TURSO_READONLY_TOKEN}` },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
-  const data = await res.json();
-  return statements.map((_, idx) => {
-    const result = data.results?.[idx];
-    if (result?.type === "error") throw new Error(result.error?.message || "Turso-Fehler");
-    const r = result?.response?.result;
-    if (!r || !r.rows) return [];
-    const cols = r.cols.map(c => c.name);
-    return r.rows.map(row => {
-      const obj = {};
-      row.forEach((cell, i) => { obj[cols[i]] = cell.value === undefined ? null : cell.value; });
-      return obj;
-    });
-  });
-}
-
-function safeSqlLiteral(s){
-  return String(s).replace(/'/g, "''");
 }
 
 function parseRawJsonField(rawJson, keys){
@@ -301,36 +271,15 @@ const MODE_LABELS = {
 };
 
 async function fetchData(){
-  // 1. Ladestation-Geraet auflösen (device_id ueber Bezeichnung)
-  const [devices] = await tursoQuery(["SELECT device_id, Bezeichnung FROM solarmanager_devices"]);
-  const ladestation = devices.find(d => (d.Bezeichnung || '').trim().toLowerCase().startsWith('ladestation'));
-  resolvedDeviceId = ladestation ? ladestation.device_id : null;
-
-  // Alle Geraete-Zeilen im Fenster laden (nicht nur die Ladestation) --
-  // SoC/Lademodus/Lade-Strom koennen auf einem anderen sensorId liegen
-  // als die Ladeleistung (z.B. Auto vs. Wallbox als getrennte Geraete).
-  const [points, allDeviceRows] = await tursoQuery([
-    `SELECT fetched_at, current_pv_generation, current_power_consumption FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`,
-    `SELECT fetched_at, device_id, current_power, soc, raw_json FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-${AVG_WINDOW_MIN} minutes') ORDER BY fetched_at`
-  ]);
-
-  const allRows = allDeviceRows.map(d => ({
-    fetched_at: d.fetched_at,
-    device_id: d.device_id,
-    power: d.current_power === null ? null : Number(d.current_power),
-    soc: d.soc === null || d.soc === undefined ? null : Number(d.soc),
-    raw_json: d.raw_json,
-  }));
-
+  const res = await fetch(`${API_BASE}/api/data/car`, {cache:"no-store", credentials:"include"});
+  if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+  const payload = await res.json();
+  resolvedDeviceId = payload.resolvedDeviceId;
   return {
-    points: points.map(p => ({
-      fetched_at: p.fetched_at,
-      pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
-      consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
-    })),
-    deviceRows: allRows.filter(d => d.device_id === resolvedDeviceId),
-    allRows: allRows,
-    deviceLabel: ladestation ? (ladestation.Bezeichnung || '').replace(/_Wh$/,'').replace(/_/g,' ').trim() : "Ladestation",
+    points: payload.points || [],
+    deviceRows: payload.deviceRows || [],
+    allRows: payload.allRows || [],
+    deviceLabel: payload.deviceLabel || "Ladestation",
   };
 }
 
@@ -412,11 +361,11 @@ async function load(){
     document.getElementById('subline').textContent = resolvedDeviceId
       ? `Geräte-ID: ${resolvedDeviceId} · aktualisiert ${nowStr}`
       : `Ladestation nicht in solarmanager_devices gefunden · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Aktualisierung alle ${REFRESH_MS/60000} Min · Rohdaten alle 5 Min (GitHub Actions)`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api (live) · Aktualisierung alle ${REFRESH_MS/60000} Min (Cloudflare Worker Cron)`;
 
     renderKpis(points, deviceRows, allRows, deviceLabel);
   } catch(e){
-    console.warn("Turso-Zugriff fehlgeschlagen:", e);
+    console.warn("API-Zugriff fehlgeschlagen:", e);
     document.getElementById('liveDot').classList.add('stale');
     if (document.getElementById('content').style.display === 'none'){
       document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
