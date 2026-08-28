@@ -112,7 +112,7 @@
     <h1>Live</h1>
     <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
   </div>
-  <div id="status">Lade Live-Daten von Turso...</div>
+  <div id="status">Lade Live-Daten...</div>
   <div id="content" style="display:none;">
 
     <div class="kpi-grid" id="kpiGrid"></div>
@@ -134,9 +134,8 @@
 </div>
 
 <script>
-// ---------- Turso (live, read-only) ----------
-const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
-const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
+// ---------- Cloudflare Worker API (D1) ----------
+const API_URL = "https://api.energy.munot.app/api/data/live";
 const REFRESH_MS = 15 * 60 * 1000; // 15 Minuten
 
 const DEVICE_COLORS = ["#E30613","#1f6feb","#1f9d55","#b9770e","#7c3aed","#0f9b8e","#c2185b","#5d4037"];
@@ -166,71 +165,18 @@ function toLocalDate(iso){
   return new Date(iso.endsWith('Z') ? iso : iso + 'Z');
 }
 
-async function fetchFromTurso(){
-  const todayISO = new Date().toLocaleDateString('en-CA', {timeZone:'Europe/Zurich'});
-  const body = {
-    requests: [
-      { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, current_pv_generation, current_power_consumption, current_grid_power, current_battery_charge_discharge FROM solarmanager_live_points WHERE datetime(fetched_at) >= datetime('now','-24 hours') ORDER BY fetched_at"
-      }},
-      { type:"execute", stmt:{ sql:
-        "SELECT fetched_at, device_id, current_power FROM solarmanager_live_devices WHERE datetime(fetched_at) >= datetime('now','-24 hours') ORDER BY fetched_at"
-      }},
-      { type:"execute", stmt:{ sql: "SELECT device_id, Bezeichnung FROM solarmanager_devices" }},
-      { type:"execute", stmt:{ sql: `SELECT Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh, Entfeuchter_Waschen_kWh, Wasserpumpe_kWh, Ladestation_kWh FROM solarmanager_data WHERE Date_ISO = '${todayISO}'` }},
-      { type:"close" }
-    ]
+async function fetchFromApi(){
+  const res = await fetch(API_URL, {cache:"no-store"});
+  if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+  const payload = await res.json();
+
+  return {
+    points: payload.points || [],
+    deviceReadings: (payload.deviceReadings || [])
+      .filter(d => !EXCLUDED_DEVICE_IDS.has((d.device_id || '').toLowerCase())),
+    deviceNames: payload.deviceNames || {},
+    dayTotals: payload.dayTotals || null,
   };
-  const res = await fetch(TURSO_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${TURSO_READONLY_TOKEN}` },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
-  const data = await res.json();
-
-  function rowsFrom(idx){
-    const result = data.results?.[idx];
-    if (result?.type === "error") throw new Error(result.error?.message || "Turso-Fehler");
-    const r = result?.response?.result;
-    if (!r || !r.rows) return [];
-    const cols = r.cols.map(c => c.name);
-    return r.rows.map(row => {
-      const obj = {};
-      row.forEach((cell, i) => { obj[cols[i]] = cell.value === undefined ? null : cell.value; });
-      return obj;
-    });
-  }
-
-  const points = rowsFrom(0).map(p => ({
-    fetched_at: p.fetched_at,
-    pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
-    consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
-    grid: p.current_grid_power === null ? null : Number(p.current_grid_power),
-    battery: p.current_battery_charge_discharge === null ? null : Number(p.current_battery_charge_discharge),
-  }));
-  const deviceReadings = rowsFrom(1)
-    .filter(d => !EXCLUDED_DEVICE_IDS.has((d.device_id || '').toLowerCase()))
-    .map(d => ({
-      fetched_at: d.fetched_at,
-      device_id: d.device_id,
-      power: d.current_power === null ? null : Number(d.current_power),
-    }));
-  const deviceNames = {};
-  rowsFrom(2).forEach(d => { deviceNames[d.device_id] = (d.Bezeichnung || d.device_id || '').replace(/_Wh$/,'').replace(/_/g,' '); });
-
-  const todayRow = rowsFrom(3)[0] || null;
-  const dayTotals = todayRow ? {
-    consumption: Number(todayRow.Consumption_kWh) || 0,
-    production: Number(todayRow.Production_kWh) || 0,
-    gridFrom: Number(todayRow.GridFrom_kWh) || 0,
-    gridTo: Number(todayRow.GridTo_kWh) || 0,
-    Entfeuchter: Number(todayRow.Entfeuchter_Waschen_kWh) || 0,
-    Wasserpumpe: Number(todayRow.Wasserpumpe_kWh) || 0,
-    Ladestation: Number(todayRow.Ladestation_kWh) || 0,
-  } : null;
-
-  return { points, deviceReadings, deviceNames, dayTotals };
 }
 
 // ---------- Mini SVG-Liniendiagramm (keine externe Lib, analog Bar-Chart-Stil) ----------
@@ -343,7 +289,7 @@ let refreshTimer = null;
 
 async function load(){
   try{
-    const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromTurso();
+    const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromApi();
 
     document.getElementById('status').style.display = 'none';
     document.getElementById('content').style.display = 'block';
@@ -354,7 +300,7 @@ async function load(){
     document.getElementById('subline').textContent = latestPoint
       ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
       : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: Turso (live) · Rohdaten & Aktualisierung alle ${REFRESH_MS/60000} Min (GitHub Actions Cron)`;
+    document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api (live) · Aktualisierung alle ${REFRESH_MS/60000} Min (Cloudflare Worker Cron)`;
 
     // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
     const byDevice = {};
@@ -390,7 +336,7 @@ async function load(){
     renderLineChart('chartDevices', deviceSeries, { height: 240 });
 
   } catch(e){
-    console.warn("Turso-Zugriff fehlgeschlagen:", e);
+    console.warn("API-Zugriff fehlgeschlagen:", e);
     document.getElementById('liveDot').classList.add('stale');
     if (document.getElementById('content').style.display === 'none'){
       document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
