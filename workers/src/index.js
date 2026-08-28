@@ -38,12 +38,9 @@ function basicAuthHeader(email, key) {
   return "Basic " + btoa(`${email}:${key}`);
 }
 
-function requireSecret(request, env) {
-  // Einfacher Shared-Secret-Schutz fuer Admin-Endpunkte, zusaetzlich zu
-  // Cloudflare Access vor energy.munot.app.
-  const got = request.headers.get("x-admin-secret");
-  return got && env.UPLOAD_SHARED_SECRET && got === env.UPLOAD_SHARED_SECRET;
-}
+// Schreibschutz laeuft jetzt vollstaendig ueber Cloudflare Access
+// (*.energy.munot.app) -- unauthentifizierte Requests erreichen den Worker
+// gar nicht erst, ein zusaetzlicher Shared-Secret-Check ist nicht mehr noetig.
 
 /* ---------------------------------------------------------------------- *
  * Car-Charging-Automation (bisher car_charging_automation.py, Cron 15')
@@ -130,7 +127,6 @@ async function handleThresholdsGet(request, env) {
 }
 
 async function handleThresholdsSet(request, env) {
-  if (!requireSecret(request, env)) return jsonResponse({ error: "unauthorized" }, 401);
   const body = await request.json();
   const minEinspeisungWh = Number(body.min_einspeisung_wh);
   const maxNetzbezugWh = Number(body.max_netzbezug_wh);
@@ -201,7 +197,6 @@ async function runCarChargingAutomation(env) {
  * ---------------------------------------------------------------------- */
 
 async function handleCarChargerControl(request, env) {
-  if (!requireSecret(request, env)) return jsonResponse({ error: "unauthorized" }, 401);
   const body = await request.json();
   const { device_id, charging_mode, target_soc, constant_current } = body;
   if (!device_id || charging_mode === undefined) {
