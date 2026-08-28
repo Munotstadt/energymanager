@@ -420,6 +420,61 @@ async function handleData(table, request, env) {
   return jsonResponse({ generated_at: nowZurich(), row_count: results.length, data: results });
 }
 
+async function handleLiveData(request, env) {
+  const db = env.DB;
+  const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+
+  const [pointsRes, deviceReadingsRes, deviceNamesRes, todayRow] = await Promise.all([
+    db.prepare(`
+      SELECT fetched_at, current_pv_generation, current_power_consumption,
+             current_grid_power, current_battery_charge_discharge
+      FROM solarmanager_live_points
+      WHERE datetime(fetched_at) >= datetime('now', '-24 hours')
+      ORDER BY fetched_at`).all(),
+    db.prepare(`
+      SELECT fetched_at, device_id, current_power
+      FROM solarmanager_live_devices
+      WHERE datetime(fetched_at) >= datetime('now', '-24 hours')
+      ORDER BY fetched_at`).all(),
+    db.prepare("SELECT device_id, Bezeichnung FROM solarmanager_devices").all(),
+    db.prepare(`
+      SELECT Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh,
+             Entfeuchter_Waschen_kWh, Wasserpumpe_kWh, Ladestation_kWh
+      FROM solarmanager_data WHERE Date_ISO = ?`).bind(todayIso).first(),
+  ]);
+
+  const points = (pointsRes.results || []).map((p) => ({
+    fetched_at: p.fetched_at,
+    pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
+    consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
+    grid: p.current_grid_power === null ? null : Number(p.current_grid_power),
+    battery: p.current_battery_charge_discharge === null ? null : Number(p.current_battery_charge_discharge),
+  }));
+
+  const deviceReadings = (deviceReadingsRes.results || []).map((d) => ({
+    fetched_at: d.fetched_at,
+    device_id: d.device_id,
+    power: d.current_power === null ? null : Number(d.current_power),
+  }));
+
+  const deviceNames = {};
+  (deviceNamesRes.results || []).forEach((d) => {
+    deviceNames[d.device_id] = (d.Bezeichnung || d.device_id || "").replace(/_Wh$/, "").replace(/_/g, " ");
+  });
+
+  const dayTotals = todayRow ? {
+    consumption: Number(todayRow.Consumption_kWh) || 0,
+    production: Number(todayRow.Production_kWh) || 0,
+    gridFrom: Number(todayRow.GridFrom_kWh) || 0,
+    gridTo: Number(todayRow.GridTo_kWh) || 0,
+    Entfeuchter: Number(todayRow.Entfeuchter_Waschen_kWh) || 0,
+    Wasserpumpe: Number(todayRow.Wasserpumpe_kWh) || 0,
+    Ladestation: Number(todayRow.Ladestation_kWh) || 0,
+  } : null;
+
+  return jsonResponse({ points, deviceReadings, deviceNames, dayTotals });
+}
+
 /* ---------------------------------------------------------------------- *
  * Router
  * ---------------------------------------------------------------------- */
@@ -451,6 +506,8 @@ export default {
         resp = await handleThresholdsGet(request, env);
       } else if (pathname === "/api/config/thresholds" && request.method === "POST") {
         resp = await handleThresholdsSet(request, env);
+      } else if (pathname === "/api/data/live" && request.method === "GET") {
+        resp = await handleLiveData(request, env);
       } else if (pathname.startsWith("/api/data/") && request.method === "GET") {
         resp = await handleData(pathname.replace("/api/data/", ""), request, env);
       } else {
