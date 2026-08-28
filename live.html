@@ -42,6 +42,13 @@
   header.topbar .nav-link:hover{background:var(--grey-100);}
   header.topbar .nav-link.active{background:var(--ink); color:#fff;}
   header.topbar .nav-links{display:flex; gap:2px;}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
+
   header.topbar .upload-link{
     text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
@@ -97,14 +104,15 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <div style="display:flex; gap:4px; align-items:center;">
+  <div class="nav-right">
     <div class="nav-links">
       <a href="index.html" class="nav-link">Dashboard</a>
       <a href="live.html" class="nav-link active">Live</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
       <a href="car.html" class="nav-link">Auto</a>
     </div>
-    <a href="geraete.html" class="upload-link">Geräte</a>
     <a href="solarmanageruploader.html" class="upload-link">&#8593; Upload</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
   </div>
 </header>
 <div class="wrap">

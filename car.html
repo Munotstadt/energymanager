@@ -42,6 +42,17 @@
   header.topbar .nav-link:hover{background:var(--grey-100);}
   header.topbar .nav-link.active{background:var(--ink); color:#fff;}
   header.topbar .nav-links{display:flex; gap:2px;}
+  header.topbar .upload-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .upload-link:hover{background:var(--grey-100);}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
+
   header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
 
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
@@ -120,30 +131,18 @@
 </head>
 <body>
 
-<div id="loginGate" class="login-wrap">
-  <div class="login-card">
-    <h1>Auto-Dashboard</h1>
-    <p>Zugriff nur mit dem Admin-Secret des energymanager-api Workers.</p>
-    <div class="field" style="margin-bottom:0;">
-      <label for="loginLabel">Label (optional, nur lokal)</label>
-      <input id="loginLabel" type="text" placeholder="z.B. iPhone">
-    </div>
-    <input id="loginPat" type="password" placeholder="Admin-Secret">
-    <button id="loginBtn" onclick="doLogin()">Anmelden</button>
-    <div id="loginStatus" class="status-msg"></div>
-  </div>
-</div>
-
-<div id="appRoot" style="display:none;">
-  <header class="topbar">
+<div id="appRoot">
+    <header class="topbar">
     <div class="brand">Munotstadt <span>Energy</span></div>
     <div class="nav-right">
       <div class="nav-links">
         <a href="index.html" class="nav-link">Dashboard</a>
         <a href="live.html" class="nav-link">Live</a>
+        <a href="geraete.html" class="nav-link">Geräte</a>
         <a href="car.html" class="nav-link active">Auto</a>
       </div>
-      <button class="ghost" style="padding:7px 12px; font-size:13px;" onclick="doLogout()">Abmelden</button>
+      <a href="solarmanageruploader.html" class="upload-link">&#8593; Upload</a>
+      <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
     </div>
   </header>
   <div class="wrap">
@@ -230,47 +229,8 @@
 const OWNER_REPO = "Munotstadt/energymanager";
 const API_BASE = "https://api.energy.munot.app";
 const CONFIG_PATH = "config/car_target_soc.json";
-const PAT_KEY = "mst_car_pat";
-const LABEL_KEY = "mst_car_label";
-
-function getPat(){ return localStorage.getItem(PAT_KEY) || ""; }
-
-async function doLogin(){
-  const pat = document.getElementById('loginPat').value.trim();
-  const label = document.getElementById('loginLabel').value.trim();
-  const statusEl = document.getElementById('loginStatus');
-  if (!pat){ statusEl.textContent = "Bitte Token eingeben."; statusEl.className = "status-msg err"; return; }
-  statusEl.textContent = "Prüfe Token...";
-  statusEl.className = "status-msg pending";
-  try{
-    // Validierung gegen den Worker (Admin-Secret), nicht mehr GitHub.
-    const res = await fetch(`${API_BASE}/api/config/thresholds`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", "x-admin-secret": pat },
-      body: JSON.stringify({ min_einspeisung_wh: -1, max_netzbezug_wh: -1 }) // absichtlich ungueltig, testet nur Auth
-    });
-    if (res.status === 401) throw new Error("Admin-Secret ungültig");
-    if (res.status !== 400 && !res.ok) throw new Error(`Worker HTTP ${res.status}`);
-    localStorage.setItem(PAT_KEY, pat);
-    if (label) localStorage.setItem(LABEL_KEY, label);
-    showApp();
-  } catch(e){
-    statusEl.textContent = `Token ungültig oder ohne Zugriff (${e.message}).`;
-    statusEl.className = "status-msg err";
-  }
-}
-
-function doLogout(){
-  localStorage.removeItem(PAT_KEY);
-  localStorage.removeItem(LABEL_KEY);
-  document.getElementById('appRoot').style.display = 'none';
-  document.getElementById('loginGate').style.display = 'block';
-}
 
 function showApp(){
-  document.getElementById('loginGate').style.display = 'none';
-  document.getElementById('appRoot').style.display = 'block';
   load();
   scheduleRefresh();
   loadTargetSoc();
@@ -502,7 +462,7 @@ async function saveChargingAutomation(){
     const res = await fetch(`${API_BASE}/api/config/thresholds`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json", "x-admin-secret": getPat() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ min_einspeisung_wh: minEinspeisung, max_netzbezug_wh: maxNetz })
     });
     const result = await res.json().catch(() => ({}));
@@ -580,15 +540,11 @@ async function applyChargingMode(){
   btn.disabled = true;
   statusEl.textContent = "Sende Befehl...";
   statusEl.className = "status-msg pending";
-  // Wiederverwendet dasselbe gespeicherte Secret-Feld (bisher GitHub-PAT) als
-  // Admin-Secret fuer energymanager-api -- x-admin-secret muss mit dem
-  // UPLOAD_SHARED_SECRET des Workers uebereinstimmen.
-  const adminSecret = getPat();
   try{
     const res = await fetch(`${API_BASE}/api/admin/car-charger-control`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json", "x-admin-secret": adminSecret },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
     const result = await res.json().catch(() => ({}));
@@ -604,11 +560,7 @@ async function applyChargingMode(){
 }
 
 // ---------- Init ----------
-if (getPat()){
-  showApp();
-} else {
-  document.getElementById('loginGate').style.display = 'block';
-}
+showApp();
 </script>
 </body>
 </html>

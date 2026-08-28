@@ -30,11 +30,24 @@
   }
   header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
   header.topbar .brand span{color:var(--red);}
-  header.topbar .back-link{
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .nav-links{display:flex; gap:2px; margin-right:6px;}
+  header.topbar .nav-link{
     text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
     padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
   }
-  header.topbar .back-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .upload-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .upload-link:hover{background:var(--grey-100);}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
 
   .wrap{max-width:560px; margin:0 auto; padding:24px 20px 60px;}
   h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 4px;}
@@ -86,21 +99,20 @@
 <body>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
-  <a href="index.html" class="back-link">&larr; Dashboard</a>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
+      <a href="car.html" class="nav-link">Auto</a>
+    </div>
+    <a href="solarmanageruploader.html" class="upload-link active">&#8593; Upload</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
+  </div>
 </header>
 <div class="wrap">
   <h1>Energie-Daten Upload</h1>
   <div class="sub">CSV-Exports hochladen &middot; wird direkt verarbeitet und in D1 gespeichert</div>
-
-  <div class="card">
-    <label for="pat">Admin-Secret</label>
-    <input type="password" id="pat" placeholder="Admin-Secret" autocomplete="off">
-    <div class="row">
-      <input type="checkbox" id="remember">
-      <label for="remember">Secret in diesem Browser merken</label>
-    </div>
-    <div class="filename" style="margin-top:8px;">Wird für beide Uploads unten verwendet.</div>
-  </div>
 
   <section class="source" id="section-solarmanager">
     <h2>1. Solarmanager (EKZ)</h2>
@@ -136,17 +148,6 @@
 <script>
 const API_BASE = "https://api.energy.munot.app";
 
-const patInput = document.getElementById('pat');
-const rememberBox = document.getElementById('remember');
-
-// Gespeichertes Secret laden
-const saved = localStorage.getItem('solarmanager_admin_secret');
-if (saved) { patInput.value = saved; rememberBox.checked = true; }
-
-rememberBox.addEventListener('change', () => {
-  if (!rememberBox.checked) localStorage.removeItem('solarmanager_admin_secret');
-});
-
 function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, label }) {
   const fileInput = document.getElementById(fileInputId);
   const filenameEl = document.getElementById(filenameId);
@@ -164,14 +165,10 @@ function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, 
   }
 
   btn.addEventListener('click', async () => {
-    const secret = patInput.value.trim();
     const file = fileInput.files[0];
 
-    if (!secret) { setStatus('Bitte Admin-Secret eingeben.', 'err'); return; }
     if (!file) { setStatus('Bitte zuerst eine CSV-Datei auswählen.', 'err'); return; }
     if (!file.name.toLowerCase().endsWith('.csv')) { setStatus('Nur .csv Dateien werden unterstützt.', 'err'); return; }
-
-    if (rememberBox.checked) localStorage.setItem('solarmanager_admin_secret', secret);
 
     btn.disabled = true;
     setStatus('Lese Datei...', 'warn');
@@ -185,8 +182,7 @@ function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, 
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Content-Type': 'text/csv',
-          'x-admin-secret': secret
+          'Content-Type': 'text/csv'
         },
         body: csvText
       });
