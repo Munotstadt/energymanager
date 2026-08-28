@@ -491,6 +491,7 @@ export default {
       "access-control-allow-origin": "https://energy.munot.app",
       "access-control-allow-headers": "content-type, x-admin-secret",
       "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-credentials": "true",
     };
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
