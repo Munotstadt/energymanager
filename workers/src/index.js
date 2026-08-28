@@ -107,19 +107,58 @@ async function setChargerMode(env, deviceId, mode, extra = {}) {
   }
 }
 
+async function getThresholds(db, env) {
+  // D1 ist die Quelle der Wahrheit (per car.html ueber /api/config/thresholds
+  // pflegbar). CAR_CHARGING_THRESHOLDS_JSON dient nur als Fallback/Erststart.
+  const row = await db
+    .prepare("SELECT min_einspeisung_wh, max_netzbezug_wh FROM car_charging_config WHERE id = 1")
+    .first();
+  if (row && row.min_einspeisung_wh !== null && row.max_netzbezug_wh !== null) {
+    return { min_einspeisung_wh: row.min_einspeisung_wh, max_netzbezug_wh: row.max_netzbezug_wh };
+  }
+  const fallback = JSON.parse(env.CAR_CHARGING_THRESHOLDS_JSON || "{}");
+  if (fallback.min_einspeisung_wh !== undefined && fallback.max_netzbezug_wh !== undefined) {
+    return fallback;
+  }
+  return null;
+}
+
+async function handleThresholdsGet(request, env) {
+  const t = await getThresholds(env.DB, env);
+  if (!t) return jsonResponse({ min_einspeisung_wh: null, max_netzbezug_wh: null });
+  return jsonResponse(t);
+}
+
+async function handleThresholdsSet(request, env) {
+  if (!requireSecret(request, env)) return jsonResponse({ error: "unauthorized" }, 401);
+  const body = await request.json();
+  const minEinspeisungWh = Number(body.min_einspeisung_wh);
+  const maxNetzbezugWh = Number(body.max_netzbezug_wh);
+  if (!Number.isFinite(minEinspeisungWh) || minEinspeisungWh < 0 ||
+      !Number.isFinite(maxNetzbezugWh) || maxNetzbezugWh < 0) {
+    return jsonResponse({ error: "min_einspeisung_wh und max_netzbezug_wh (>= 0) erforderlich" }, 400);
+  }
+  await env.DB.prepare(`
+    INSERT INTO car_charging_config (id, min_einspeisung_wh, max_netzbezug_wh, updated_at)
+    VALUES (1, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      min_einspeisung_wh=excluded.min_einspeisung_wh,
+      max_netzbezug_wh=excluded.max_netzbezug_wh,
+      updated_at=excluded.updated_at`)
+    .bind(minEinspeisungWh, maxNetzbezugWh, nowZurich())
+    .run();
+  return jsonResponse({ ok: true, min_einspeisung_wh: minEinspeisungWh, max_netzbezug_wh: maxNetzbezugWh });
+}
+
 async function runCarChargingAutomation(env) {
-  const thresholds = JSON.parse(env.CAR_CHARGING_THRESHOLDS_JSON || "{}");
-  const minEinspeisungWh = thresholds.min_einspeisung_wh;
-  const maxNetzbezugWh = thresholds.max_netzbezug_wh;
-  if (minEinspeisungWh === undefined || maxNetzbezugWh === undefined) {
-    // Fallback: Schwellenwerte aus config/car_charging_automation.json im
-    // Repo werden per Pages-Function /api/config/thresholds gespiegelt,
-    // siehe README-Hinweis unten -- hier zur Sicherheit hart abbrechen.
-    console.log("Keine Schwellenwerte konfiguriert (CAR_CHARGING_THRESHOLDS_JSON) -- Abbruch.");
+  const db = env.DB;
+  const thresholds = await getThresholds(db, env);
+  if (!thresholds) {
+    console.log("Keine Schwellenwerte konfiguriert (weder D1 noch CAR_CHARGING_THRESHOLDS_JSON) -- Abbruch.");
     return;
   }
-
-  const db = env.DB;
+  const minEinspeisungWh = thresholds.min_einspeisung_wh;
+  const maxNetzbezugWh = thresholds.max_netzbezug_wh;
   const deviceId = await resolveLadestationDeviceId(db);
   if (!deviceId) {
     console.log("Ladestation nicht in solarmanager_devices gefunden -- Abbruch.");
@@ -408,6 +447,10 @@ export default {
         resp = await handleKostalUpload(request, env);
       } else if (pathname === "/api/admin/car-charger-control" && request.method === "POST") {
         resp = await handleCarChargerControl(request, env);
+      } else if (pathname === "/api/config/thresholds" && request.method === "GET") {
+        resp = await handleThresholdsGet(request, env);
+      } else if (pathname === "/api/config/thresholds" && request.method === "POST") {
+        resp = await handleThresholdsSet(request, env);
       } else if (pathname.startsWith("/api/data/") && request.method === "GET") {
         resp = await handleData(pathname.replace("/api/data/", ""), request, env);
       } else {
