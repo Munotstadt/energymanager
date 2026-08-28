@@ -1,0 +1,22 @@
+name = "energymanager-api"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# 15-Minuten-Takt, identisch zur bisherigen car-charging-automation.yml
+[triggers]
+crons = ["*/15 * * * *"]
+
+# D1-Datenbank -- database_id nach "wrangler d1 create energymanager"
+# einsetzen (gleiche DB, die auch der solarmanager-live/daily-stats Worker
+# nutzt, damit alle Tabellen in einer DB liegen).
+[[d1_databases]]
+binding = "DB"
+database_name = "energymanager"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Secrets NICHT hier eintragen, sondern per:
+#   wrangler secret put SM_EMAIL
+#   wrangler secret put SM_API_KEY_WRITE
+#   wrangler secret put UPLOAD_SHARED_SECRET
+[vars]
+SM_BASE_URL = "https://cloud.solar-manager.ch"
