@@ -1,18 +1,22 @@
-name = "energymanager-api"
+name = "energymanager"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
+
+# Custom Route statt workers.dev-Default-URL. Setzt voraus, dass munot.app
+# als Zone im selben Cloudflare-Account liegt (wie bei energy.munot.app).
+routes = [
+  { pattern = "api.energy.munot.app/*", custom_domain = true }
+]
 
 # 15-Minuten-Takt, identisch zur bisherigen car-charging-automation.yml
 [triggers]
 crons = ["*/15 * * * *"]
 
-# D1-Datenbank -- database_id nach "wrangler d1 create energymanager"
-# einsetzen (gleiche DB, die auch der solarmanager-live/daily-stats Worker
-# nutzt, damit alle Tabellen in einer DB liegen).
+# D1-Datenbank -- bereits bestehende DB "energy".
 [[d1_databases]]
 binding = "DB"
-database_name = "energymanager"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_name = "energy"
+database_id = "5dfeb585-9598-41c5-a485-52d2831e4ec2"
 
 # Secrets NICHT hier eintragen, sondern per:
 #   wrangler secret put SM_EMAIL
