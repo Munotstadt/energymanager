@@ -5,7 +5,7 @@ compatibility_date = "2026-08-01"
 # Custom Route statt workers.dev-Default-URL. Setzt voraus, dass munot.app
 # als Zone im selben Cloudflare-Account liegt (wie bei energy.munot.app).
 routes = [
-  { pattern = "api.energy.munot.app/*", custom_domain = true }
+  { pattern = "api.energy.munot.app", custom_domain = true }
 ]
 
 # 15-Minuten-Takt, identisch zur bisherigen car-charging-automation.yml
