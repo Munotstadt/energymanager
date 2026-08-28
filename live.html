@@ -166,7 +166,7 @@ function toLocalDate(iso){
 }
 
 async function fetchFromApi(){
-  const res = await fetch(API_URL, {cache:"no-store"});
+  const res = await fetch(API_URL, {cache:"no-store", credentials:"include"});
   if (!res.ok) throw new Error(`API HTTP ${res.status}`);
   const payload = await res.json();
 

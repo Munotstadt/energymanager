@@ -246,6 +246,7 @@ async function doLogin(){
     // Validierung gegen den Worker (Admin-Secret), nicht mehr GitHub.
     const res = await fetch(`${API_BASE}/api/config/thresholds`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json", "x-admin-secret": pat },
       body: JSON.stringify({ min_einspeisung_wh: -1, max_netzbezug_wh: -1 }) // absichtlich ungueltig, testet nur Auth
     });
@@ -473,7 +474,7 @@ function scheduleRefresh(){
 // ---------- Start-Charging-Schwellen (Worker: /api/config/thresholds, D1) ----------
 async function loadChargingAutomation(){
   try{
-    const res = await fetch(`${API_BASE}/api/config/thresholds`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/config/thresholds`, { cache: "no-store", credentials: "include" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     document.getElementById('minEinspeisungInput').value = json.min_einspeisung_wh ?? '';
@@ -500,6 +501,7 @@ async function saveChargingAutomation(){
   try{
     const res = await fetch(`${API_BASE}/api/config/thresholds`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json", "x-admin-secret": getPat() },
       body: JSON.stringify({ min_einspeisung_wh: minEinspeisung, max_netzbezug_wh: maxNetz })
     });
@@ -585,6 +587,7 @@ async function applyChargingMode(){
   try{
     const res = await fetch(`${API_BASE}/api/admin/car-charger-control`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json", "x-admin-secret": adminSecret },
       body: JSON.stringify(body)
     });

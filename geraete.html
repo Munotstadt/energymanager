@@ -151,7 +151,7 @@ function writeCache(rows){
 const NUMERIC_COLS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Entfeuchter_Waschen_kWh","Wasserpumpe_kWh","Ladestation_kWh"];
 
 async function fetchFromApi(){
-  const res = await fetch(API_URL, {cache:"no-store"});
+  const res = await fetch(API_URL, {cache:"no-store", credentials:"include"});
   if (!res.ok) throw new Error(`API HTTP ${res.status}`);
   const payload = await res.json();
   return (payload.data || []).map(row => {

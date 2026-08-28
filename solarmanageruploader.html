@@ -134,7 +134,7 @@
 </div>
 
 <script>
-const API_BASE = "https://api.energy.munot.app";
+const API_BASE = "https://energymanager-api.<account>.workers.dev";
 
 const patInput = document.getElementById('pat');
 const rememberBox = document.getElementById('remember');
@@ -183,6 +183,7 @@ function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, 
 
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'text/csv',
           'x-admin-secret': secret

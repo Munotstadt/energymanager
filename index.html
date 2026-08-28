@@ -237,7 +237,7 @@
 // ---------- Cloudflare Worker API (D1) ----------
 // energymanager-api liefert dieselben Spalten wie bisher Turso, unter
 // /api/data/solarmanager_data. Ersetzt Turso-Live-Zugriff + JSON-Fallback.
-const API_URL = "https://api.energy.munot.app/api/data/solarmanager_data";
+const API_URL = "https://energymanager-api.<account>.workers.dev/api/data/solarmanager_data";
 const API_NUMERIC_COLS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Entfeuchter_Waschen_kWh","Wasserpumpe_kWh","Ladestation_kWh"];
 
 const CACHE_KEY = "munotstadt_solarmanager_cache_v1";
@@ -255,7 +255,7 @@ function writeCache(rows){
 }
 
 async function fetchFromApi(){
-  const res = await fetch(API_URL, {cache:"no-store"});
+  const res = await fetch(API_URL, {cache:"no-store", credentials:"include"});
   if (!res.ok) throw new Error(`API HTTP ${res.status}`);
   const payload = await res.json();
   return (payload.data || []).map(row => {
