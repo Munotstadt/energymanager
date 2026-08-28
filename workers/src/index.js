@@ -415,6 +415,49 @@ async function handleData(table, request, env) {
   return jsonResponse({ generated_at: nowZurich(), row_count: results.length, data: results });
 }
 
+async function handleCarData(request, env) {
+  const db = env.DB;
+
+  const devicesRes = await db.prepare("SELECT device_id, Bezeichnung FROM solarmanager_devices").all();
+  const devices = devicesRes.results || [];
+  const ladestation = devices.find(d => (d.Bezeichnung || "").trim().toLowerCase().startsWith("ladestation"));
+  const resolvedDeviceId = ladestation ? ladestation.device_id : null;
+  const deviceLabel = ladestation
+    ? (ladestation.Bezeichnung || "").replace(/_Wh$/, "").replace(/_/g, " ").trim()
+    : "Ladestation";
+
+  const [pointsRes, deviceRowsRes] = await Promise.all([
+    db.prepare(`
+      SELECT fetched_at, current_pv_generation, current_power_consumption
+      FROM solarmanager_live_points
+      WHERE datetime(fetched_at) >= datetime('now', ?)
+      ORDER BY fetched_at`).bind(`-${AVG_WINDOW_MIN} minutes`).all(),
+    db.prepare(`
+      SELECT fetched_at, device_id, current_power, soc, raw_json
+      FROM solarmanager_live_devices
+      WHERE datetime(fetched_at) >= datetime('now', ?)
+      ORDER BY fetched_at`).bind(`-${AVG_WINDOW_MIN} minutes`).all(),
+  ]);
+
+  const points = (pointsRes.results || []).map((p) => ({
+    fetched_at: p.fetched_at,
+    pv: p.current_pv_generation === null ? null : Number(p.current_pv_generation),
+    consumption: p.current_power_consumption === null ? null : Number(p.current_power_consumption),
+  }));
+
+  const allRows = (deviceRowsRes.results || []).map((d) => ({
+    fetched_at: d.fetched_at,
+    device_id: d.device_id,
+    power: d.current_power === null ? null : Number(d.current_power),
+    soc: d.soc === null || d.soc === undefined ? null : Number(d.soc),
+    raw_json: d.raw_json,
+  }));
+
+  const deviceRows = allRows.filter((d) => d.device_id === resolvedDeviceId);
+
+  return jsonResponse({ points, deviceRows, allRows, deviceLabel, resolvedDeviceId });
+}
+
 async function handleLiveData(request, env) {
   const db = env.DB;
   const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
@@ -504,6 +547,8 @@ export default {
         resp = await handleThresholdsSet(request, env);
       } else if (pathname === "/api/data/live" && request.method === "GET") {
         resp = await handleLiveData(request, env);
+      } else if (pathname === "/api/data/car" && request.method === "GET") {
+        resp = await handleCarData(request, env);
       } else if (pathname.startsWith("/api/data/") && request.method === "GET") {
         resp = await handleData(pathname.replace("/api/data/", ""), request, env);
       } else {
