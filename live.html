@@ -97,6 +97,14 @@
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
     padding:16px 18px 12px; margin-bottom:6px;
   }
+  .refresh-btn{
+    font-family:'Inter',sans-serif; font-weight:600; font-size:13px;
+    padding:8px 14px; border-radius:var(--radius); border:1px solid var(--ink);
+    background:var(--ink); color:#fff; cursor:pointer; white-space:nowrap;
+  }
+  .refresh-btn:hover{opacity:.85;}
+  .refresh-btn:disabled{opacity:.5; cursor:default;}
+  .today-est .kpi .value{font-size:1.1rem;}
   .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
   .legend .item{display:flex; align-items:center; gap:5px;}
   .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
@@ -121,14 +129,20 @@
   </div>
 </header>
 <div class="wrap">
-  <div>
-    <h1>Live</h1>
-    <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+    <div>
+      <h1>Live</h1>
+      <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" onclick="triggerCollectorAndReload()">&#8635; Aktualisieren</button>
   </div>
   <div id="status">Lade Live-Daten...</div>
   <div id="content" style="display:none;">
 
     <div class="kpi-grid" id="kpiGrid"></div>
+
+    <h2>Heute <span class="hint">geschätzt, bis jetzt &middot; aus Live-Daten hochgerechnet</span></h2>
+    <div class="kpi-grid today-est" id="todayEstGrid"></div>
 
     <h2>Produktion &amp; Verbrauch <span class="hint">letzte 24 Stunden</span></h2>
     <div class="card">
@@ -300,6 +314,77 @@ function renderKpis(latestPoint, latestDeviceByName, dayTotals){
 
 let refreshTimer = null;
 
+// ---------- Heute-Schaetzung aus Live-Punkten (Trapez-Integration) ----------
+function estimateTodayFromPoints(points){
+  const todayIso = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Zurich'}).format(new Date());
+  const todays = points
+    .filter(p => new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Zurich'}).format(toLocalDate(p.fetched_at)) === todayIso)
+    .slice()
+    .sort((a,b) => toLocalDate(a.fetched_at) - toLocalDate(b.fetched_at));
+
+  let consumptionWh = 0, productionWh = 0, gridFromWh = 0, gridToWh = 0;
+  for (let i = 1; i < todays.length; i++){
+    const prev = todays[i-1], cur = todays[i];
+    const hours = (toLocalDate(cur.fetched_at) - toLocalDate(prev.fetched_at)) / 3600000;
+    if (hours <= 0 || hours > 1) continue; // Luecken (z.B. Nachtpause) nicht hochrechnen
+
+    if (prev.consumption !== null && cur.consumption !== null){
+      consumptionWh += (prev.consumption + cur.consumption) / 2 * hours;
+    }
+    if (prev.pv !== null && cur.pv !== null){
+      productionWh += (prev.pv + cur.pv) / 2 * hours;
+    }
+    if (prev.grid !== null && cur.grid !== null){
+      const avgGrid = (prev.grid + cur.grid) / 2;
+      if (avgGrid > 0) gridFromWh += avgGrid * hours;
+      else gridToWh += -avgGrid * hours;
+    }
+  }
+
+  return {
+    consumption_kwh: consumptionWh / 1000,
+    production_kwh: productionWh / 1000,
+    gridFrom_kwh: gridFromWh / 1000,
+    gridTo_kwh: gridToWh / 1000,
+    n_points: todays.length,
+  };
+}
+
+function renderTodayEstimate(points){
+  const est = estimateTodayFromPoints(points);
+  const cards = [
+    {cls:'cons', label:'Verbrauch', value:`${fmt(est.consumption_kwh, 1)} <small>kWh</small>`},
+    {cls:'pv', label:'Produktion', value:`${fmt(est.production_kwh, 1)} <small>kWh</small>`},
+    {cls:'grid-from', label:'Netzbezug', value:`${fmt(est.gridFrom_kwh, 1)} <small>kWh</small>`},
+    {cls:'grid-to', label:'Einspeisung', value:`${fmt(est.gridTo_kwh, 1)} <small>kWh</small>`},
+  ];
+  document.getElementById('todayEstGrid').innerHTML = cards.map(c => `
+    <div class="kpi ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+// ---------- Manuelles Aktualisieren: Collector-Worker antriggern ----------
+const COLLECTOR_URL = "https://collector.energy.munot.app/";
+
+async function triggerCollectorAndReload(){
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Aktualisiere...';
+  try{
+    await fetch(COLLECTOR_URL, {cache:'no-store', credentials:'include'});
+  } catch(e){
+    console.warn('Collector-Trigger fehlgeschlagen (Datenanzeige wird trotzdem neu geladen):', e);
+  } finally {
+    await load();
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 async function load(){
   try{
     const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromApi();
@@ -329,6 +414,7 @@ async function load(){
     });
 
     renderKpis(latestPoint, latestDeviceByName, dayTotals);
+    renderTodayEstimate(points);
 
     // Hauptchart: Produktion / Verbrauch / Netzbezug
     const mainSeries = [
