@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --red:#E30613;
@@ -88,6 +89,16 @@
   .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
   .footnotes{color:var(--text-dim); font-size:0.72rem; line-height:1.6; margin-top:8px;}
   a{color:var(--accent);}
+
+  .table-toolbar{display:flex; justify-content:flex-end; margin-bottom:8px;}
+  .export-btn{
+    display:inline-flex; align-items:center; gap:6px;
+    background:#fff; border:1px solid var(--grey-300); border-radius:var(--radius);
+    color:var(--ink); font-family:'Inter',sans-serif; font-weight:500; font-size:13px;
+    padding:7px 14px; cursor:pointer;
+  }
+  .export-btn:hover{background:var(--grey-100);}
+  .export-btn:disabled{opacity:0.5; cursor:default;}
 </style>
 </head>
 <body>
@@ -115,6 +126,9 @@
 
     <h2>Monatsübersicht (kumuliert) <span class="hint">neuster Monat zuoberst</span></h2>
     <div class="card" style="padding-bottom:14px;">
+      <div class="table-toolbar">
+        <button id="exportBtn" class="export-btn" disabled>&#8595; Excel-Export</button>
+      </div>
       <div class="table-scroll"><table id="costsTable"></table></div>
       <div class="footnotes">
         [*ohne Ladestation] &nbsp;·&nbsp; [CHF fromGrid inkl. Fix-Gebühr] &nbsp;·&nbsp;
@@ -363,11 +377,11 @@ function renderCostsTable(rows){
       <td>${r.fromGridRate!==null ? fmt(r.fromGridRate,5) : '–'}</td>
       <td>${r.toGridRate!==null ? fmt(r.toGridRate,5) : '–'}</td>
       <td>${r.fixRate!==null ? fmt(r.fixRate,3) : '–'}</td>
-      <td>${r.costFromGrid!==null ? fmt(r.costFromGrid,2) : '–'}</td>
-      <td class="${r.costToGrid<0?'neg':''}">${r.costToGrid!==null ? fmt(r.costToGrid,2) : '–'}</td>
-      <td class="${r.net<0?'neg':''}">${r.net!==null ? fmt(r.net,2) : '–'}</td>
-      <td>${r.costLadestation!==null ? fmt(r.costLadestation,2) : '–'}</td>
-      <td class="total-col">${r.total!==null ? fmt(r.total,2) : '–'}</td>
+      <td>${r.costFromGrid!==null ? fmt(r.costFromGrid,0) : '–'}</td>
+      <td class="${r.costToGrid<0?'neg':''}">${r.costToGrid!==null ? fmt(r.costToGrid,0) : '–'}</td>
+      <td class="${r.net<0?'neg':''}">${r.net!==null ? fmt(r.net,0) : '–'}</td>
+      <td>${r.costLadestation!==null ? fmt(r.costLadestation,0) : '–'}</td>
+      <td class="total-col">${r.total!==null ? fmt(r.total,0) : '–'}</td>
     </tr>
   `).join('');
   document.getElementById('costsTable').innerHTML = head + body;
@@ -386,7 +400,72 @@ function applyData(payload, sourceLabel){
   document.getElementById('subline').textContent = `${monthly.length} Monate · inkl. Prognose für die nächsten ${FUTURE_MONTHS} Monate`;
   document.getElementById('footerInfo').textContent = `Datenquelle: ${sourceLabel}`;
   renderCostsTable(rows);
+
+  CURRENT_ROWS = rows;
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.disabled = rows.length === 0 || typeof XLSX === 'undefined';
 }
+
+let CURRENT_ROWS = [];
+
+function rowLabel(r){
+  let l = r.label;
+  if (r.dataEstimate === 'full') l += ' (Prognose)';
+  else if (r.dataEstimate === 'partial') l += ' (teilw. geschätzt)';
+  if (r.priceEstimate) l += ' [Tarif-Schätzung]';
+  if (r.noPrice) l += ' [kein Tarif]';
+  return l;
+}
+
+function exportToExcel(rows){
+  if (typeof XLSX === 'undefined'){
+    alert('Excel-Export nicht verfügbar (xlsx-Bibliothek konnte nicht geladen werden).');
+    return;
+  }
+  const groupRow = [
+    "", "kWh","","","","", "CHF kWh","","", "CHF","","","",""
+  ];
+  const headRow = [
+    "Monat/Jahr",
+    "Consumption*","Ladestation","Production","fromGrid","toGrid",
+    "fromGrid","toGrid","fix",
+    "fromGrid","toGrid","net","Ladestation","Total"
+  ];
+  const bodyRows = rows.map(r => ([
+    rowLabel(r),
+    round0(r.consumptionOhneLadestation),
+    round0(r.m.Ladestation_kWh),
+    round0(r.m.Production_kWh),
+    round0(r.m.GridFrom_kWh),
+    round0(r.m.GridTo_kWh),
+    r.fromGridRate !== null ? round(r.fromGridRate,5) : null,
+    r.toGridRate !== null ? round(r.toGridRate,5) : null,
+    r.fixRate !== null ? round(r.fixRate,3) : null,
+    r.costFromGrid !== null ? round0(r.costFromGrid) : null,
+    r.costToGrid !== null ? round0(r.costToGrid) : null,
+    r.net !== null ? round0(r.net) : null,
+    r.costLadestation !== null ? round0(r.costLadestation) : null,
+    r.total !== null ? round0(r.total) : null,
+  ]));
+
+  const ws = XLSX.utils.aoa_to_sheet([groupRow, headRow, ...bodyRows]);
+  ws['!merges'] = [
+    { s:{r:0,c:1}, e:{r:0,c:5} },   // kWh
+    { s:{r:0,c:6}, e:{r:0,c:8} },   // CHF kWh
+    { s:{r:0,c:9}, e:{r:0,c:13} },  // CHF
+  ];
+  ws['!cols'] = headRow.map((_,i) => ({ wch: i===0 ? 26 : 12 }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Kosten");
+  const stamp = new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Zurich"}).format(new Date());
+  XLSX.writeFile(wb, `munotstadt-kosten_${stamp}.xlsx`);
+}
+
+function round0(n){ return n===null||n===undefined||isNaN(n) ? null : Math.round(n); }
+function round(n, d){ return n===null||n===undefined||isNaN(n) ? null : Math.round(n*10**d)/10**d; }
+
+document.getElementById('exportBtn').addEventListener('click', () => exportToExcel(CURRENT_ROWS));
 
 async function load(){
   const cached = readCache();
