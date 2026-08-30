@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --accent:#E30613; --ok:#1f9d55; --warn:#b9770e;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45; min-height:100vh;
+  }
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .nav-links{display:flex; gap:2px; margin-right:6px;}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .settings-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .settings-link:hover{background:var(--grey-100);}
+  header.topbar .settings-link.active{background:var(--ink); color:#fff;}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
+
+  .wrap{max-width:560px; margin:0 auto; padding:24px 20px 60px;}
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 4px;}
+  .sub{color:var(--grey-600); font-size:0.85rem; margin-bottom:24px;}
+  section.source{margin-bottom:32px;}
+  section.source h2{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.05rem;
+    margin:0 0 3px;
+  }
+  section.source .source-sub{color:var(--grey-600); font-size:0.82rem; margin-bottom:12px;}
+  .card{
+    border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:16px 18px; background:var(--bg); margin-bottom:14px;
+  }
+  label{
+    display:block; font-size:12px; font-weight:500;
+    color:var(--grey-600); margin-bottom:4px;
+  }
+  input[type=password], input[type=text]{
+    width:100%; padding:8px 10px; border:1px solid var(--grey-300); border-radius:var(--radius);
+    font-family:'IBM Plex Mono',monospace; font-size:14px; background:var(--bg); color:var(--ink);
+  }
+  input[readonly]{background:var(--grey-100); color:var(--grey-600);}
+  input[type=password]:focus, input[type=text]:focus{outline:2px solid var(--red); outline-offset:1px;}
+  input[type=file]{
+    width:100%; color:var(--grey-600); font-size:0.85rem; margin-top:4px; font-family:'Inter',sans-serif;
+  }
+  .row{display:flex; align-items:center; gap:8px; margin-top:10px;}
+  .row input[type=checkbox]{width:16px; height:16px;}
+  .row label{margin:0; color:var(--grey-600); font-weight:400; font-size:0.85rem;}
+  button{
+    width:100%; font-family:'Inter',sans-serif; font-weight:600; font-size:14px;
+    padding:11px 14px; border-radius:var(--radius); border:1px solid var(--ink);
+    background:var(--ink); color:#fff; cursor:pointer; margin-top:4px;
+  }
+  button.secondary{background:var(--bg); color:var(--ink);}
+  button:hover{opacity:.85;}
+  button:disabled{opacity:.5; cursor:default;}
+  .status{
+    margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:0.82rem;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .ok{color:var(--ok);}
+  .err{color:var(--accent);}
+  .warn{color:var(--warn);}
+  .filename{font-family:'IBM Plex Mono',monospace; color:var(--grey-600); font-size:0.82rem; margin-top:6px;}
+  .footer{color:var(--grey-600); font-size:0.75rem; margin-top:24px; text-align:center;}
+  a{color:var(--accent);}
+  .field{margin-bottom:12px;}
+  .copy-row{display:flex; gap:6px;}
+  .copy-row input{flex:1;}
+  .copy-row button{width:auto; padding:8px 14px; margin-top:0; flex-shrink:0;}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Munotstadt <span>Energy</span></div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
+      <a href="car.html" class="nav-link">Auto</a>
+    </div>
+    <a href="settings.html" class="settings-link active">&#9881; Settings</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
+  </div>
+</header>
+<div class="wrap">
+  <h1>Settings</h1>
+  <div class="sub">Debug-Infos &amp; Daten-Upload</div>
+
+  <section class="source" id="section-debug">
+    <h2>Debug</h2>
+    <div class="source-sub">API-Verbindung des Cloudflare Workers</div>
+    <div class="card">
+      <div class="field">
+        <label for="apiUrlField">API Base URL</label>
+        <div class="copy-row">
+          <input type="text" id="apiUrlField" readonly>
+          <button class="secondary" id="copyApiUrlBtn" type="button">Kopieren</button>
+        </div>
+      </div>
+      <button id="testConnBtn">Verbindung testen</button>
+      <div class="status" id="status-debug"></div>
+    </div>
+  </section>
+
+  <section class="source" id="section-solarmanager">
+    <h2>1. Solarmanager (EKZ)</h2>
+    <div class="source-sub">EKZ-Export &middot; wird zu Tageswerten aggregiert &middot; Tabelle <code>solarmanager_data</code></div>
+    <div class="card">
+      <label for="file-solarmanager">EKZ Solarmanager CSV</label>
+      <input type="file" id="file-solarmanager" accept=".csv,text/csv">
+      <div class="filename" id="filename-solarmanager"></div>
+    </div>
+    <button id="btn-solarmanager">Hochladen &amp; verarbeiten</button>
+    <div class="status" id="status-solarmanager"></div>
+  </section>
+
+  <section class="source" id="section-kostal">
+    <h2>2. Kostal (Wechselrichter-Ertrag)</h2>
+    <div class="source-sub">Export aus dem Kostal-Portal (Tagesertrag pro Jahr) &middot; Tabelle <code>kostal_data</code> &middot; Format: Semikolon-getrennt, z.B. <code>"DateTime";"2024 [Wh]";"2025 [Wh]";"2026 [Wh]"</code></div>
+    <div class="card">
+      <label for="file-kostal">Kostal CSV</label>
+      <input type="file" id="file-kostal" accept=".csv,text/csv">
+      <div class="filename" id="filename-kostal"></div>
+    </div>
+    <button id="btn-kostal">Hochladen &amp; verarbeiten</button>
+    <div class="status" id="status-kostal"></div>
+  </section>
+
+  <div class="footer">
+    Repo: <a href="https://github.com/Munotstadt/energymanager" target="_blank">Munotstadt/energymanager</a><br>
+    Verarbeitung erfolgt sofort im Cloudflare Worker (energymanager-api), kein Warten auf Actions mehr.<br>
+    Mehrfaches Hochladen derselben Tage ist unkritisch &ndash; bestehende Einträge werden überschrieben, es entstehen keine Duplikate.
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://api.energy.munot.app";
+
+// ---------- Debug ----------
+document.getElementById('apiUrlField').value = API_BASE;
+
+document.getElementById('copyApiUrlBtn').addEventListener('click', async () => {
+  try{
+    await navigator.clipboard.writeText(API_BASE);
+    const btn = document.getElementById('copyApiUrlBtn');
+    const original = btn.textContent;
+    btn.textContent = 'Kopiert!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  } catch(e){ /* Clipboard evtl. nicht verfuegbar, ignorieren */ }
+});
+
+document.getElementById('testConnBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('status-debug');
+  statusEl.textContent = 'Teste Verbindung...';
+  statusEl.className = 'status warn';
+  const started = performance.now();
+  try{
+    const res = await fetch(`${API_BASE}/api/data/solarmanager_data`, {cache:'no-store', credentials:'include'});
+    const ms = Math.round(performance.now() - started);
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok){
+      statusEl.textContent = `HTTP ${res.status} nach ${ms} ms\n${JSON.stringify(payload)}`;
+      statusEl.className = 'status err';
+      return;
+    }
+    statusEl.textContent = `OK · HTTP ${res.status} · ${ms} ms\nZeilen: ${payload.row_count ?? '–'} · generated_at: ${payload.generated_at ?? '–'}`;
+    statusEl.className = 'status ok';
+  } catch(e){
+    statusEl.textContent = `Fehler: ${e.message}`;
+    statusEl.className = 'status err';
+  }
+});
+
+// ---------- Upload ----------
+function setupUploader({ fileInputId, filenameId, buttonId, statusId, endpoint, label }) {
+  const fileInput = document.getElementById(fileInputId);
+  const filenameEl = document.getElementById(filenameId);
+  const statusEl = document.getElementById(statusId);
+  const btn = document.getElementById(buttonId);
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    filenameEl.textContent = f ? `${f.name} (${(f.size/1024).toFixed(1)} KB)` : '';
+  });
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status' + (cls ? ' ' + cls : '');
+  }
+
+  btn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+
+    if (!file) { setStatus('Bitte zuerst eine CSV-Datei auswählen.', 'err'); return; }
+    if (!file.name.toLowerCase().endsWith('.csv')) { setStatus('Nur .csv Dateien werden unterstützt.', 'err'); return; }
+
+    btn.disabled = true;
+    setStatus('Lese Datei...', 'warn');
+
+    try {
+      const csvText = await file.text();
+
+      setStatus(`Sende ${label}-CSV an Worker...`, 'warn');
+
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'text/csv'
+        },
+        body: csvText
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.error || `Worker HTTP ${res.status}`);
+      }
+
+      setStatus(
+        `Upload erfolgreich!\n${result.days_written ?? 0} Tageswert(e) geschrieben.`,
+        'ok'
+      );
+      fileInput.value = '';
+      filenameEl.textContent = '';
+    } catch (e) {
+      setStatus(`Fehler: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+setupUploader({
+  fileInputId: 'file-solarmanager', filenameId: 'filename-solarmanager',
+  buttonId: 'btn-solarmanager', statusId: 'status-solarmanager',
+  endpoint: '/api/upload/solarmanager', label: 'Solarmanager'
+});
+
+setupUploader({
+  fileInputId: 'file-kostal', filenameId: 'filename-kostal',
+  buttonId: 'btn-kostal', statusId: 'status-kostal',
+  endpoint: '/api/upload/kostal', label: 'Kostal'
+});
+</script>
+</body>
+</html>
