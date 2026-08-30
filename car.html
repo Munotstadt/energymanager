@@ -221,7 +221,7 @@
           <button onclick="applyChargingMode()" id="applyModeBtn">Senden</button>
         </div>
         <div id="modeStatus" class="status-msg"></div>
-        <div class="hint-txt">Löst einen GitHub-Action-Workflow aus (<code>car-charger-control.yml</code>), der den Solar-Manager-API-Call serverseitig ausführt. Änderung dauert i.d.R. 20–40 Sekunden.</div>
+        <div class="hint-txt">Sendet den Befehl direkt an den energymanager-api Worker, der ihn an die Solar-Manager-API weiterleitet. Änderung wirkt i.d.R. innerhalb weniger Sekunden.</div>
       </div>
 
     </div>
@@ -233,7 +233,6 @@
 // ---------- Repo / Auth ----------
 const OWNER_REPO = "Munotstadt/energymanager";
 const API_BASE = "https://api.energy.munot.app";
-const CONFIG_PATH = "config/car_target_soc.json";
 
 function showApp(){
   load();
@@ -431,10 +430,10 @@ async function saveChargingAutomation(){
   }
 }
 
-// ---------- Ziel-SoC (config/car_target_soc.json im Repo) ----------
+// ---------- Ziel-SoC (Worker: /api/config/target-soc, D1) ----------
 async function loadTargetSoc(){
   try{
-    const res = await fetch(`https://raw.githubusercontent.com/${OWNER_REPO}/main/${CONFIG_PATH}?_=${Date.now()}`);
+    const res = await fetch(`${API_BASE}/api/config/target-soc`, { cache: "no-store", credentials: "include" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     document.getElementById('targetSocInput').value = json.target_soc_percent ?? '';
@@ -457,10 +456,14 @@ async function saveTargetSoc(){
   statusEl.textContent = "Speichere...";
   statusEl.className = "status-msg pending";
   try{
-    await commitJsonFile(CONFIG_PATH, {
-      target_soc_percent: val,
-      updated_at: new Date().toISOString()
-    }, `car.html: Ziel-SoC auf ${val}% gesetzt`);
+    const res = await fetch(`${API_BASE}/api/config/target-soc`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_soc_percent: val })
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
     statusEl.textContent = `Gespeichert: ${val}%`;
     statusEl.className = "status-msg ok";
   } catch(e){
