@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy — Kosten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #E30613;
+    --bg: #ffffff;
+    --text: #111111;
+    --muted: #6b6b6b;
+    --border: #e6e6e6;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 24px 16px 64px;
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1.6rem;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  nav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    margin-right: 16px;
+    border-bottom: 2px solid transparent;
+  }
+  nav a.active, nav a:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  nav { margin-bottom: 20px; }
+  #status {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  #status.error { color: var(--accent); }
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 980px;
+    font-size: 0.82rem;
+  }
+  thead th {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    text-align: right;
+    padding: 10px 8px;
+    border-bottom: 2px solid var(--text);
+    white-space: nowrap;
+    background: #fafafa;
+    position: sticky;
+    top: 0;
+  }
+  thead th:first-child, tbody td:first-child { text-align: left; }
+  tbody td {
+    text-align: right;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr:hover { background: #fafafa; }
+  td.total, th.total { font-weight: 600; }
+  td.net-neg { color: var(--accent); }
+  .footnotes {
+    margin-top: 10px;
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .badge.estimate { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Dashboard</a>
+  <a href="live.html">Live</a>
+  <a href="car.html">Ladestation</a>
+  <a href="geraete.html">Geräte</a>
+  <a href="costs.html" class="active">Kosten</a>
+</nav>
+
+<h1>Kosten</h1>
+<div class="sub">Monatsübersicht (kumuliert), neuster Monat zuoberst — CHF-Werte auf Basis EKZ-Tarifperioden</div>
+<div id="status">Lade…</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Monat/Jahr</th>
+        <th>kWh<br>Consumption*</th>
+        <th>Ladestation</th>
+        <th>Production</th>
+        <th>fromGrid</th>
+        <th>toGrid</th>
+        <th>CHF kWh<br>fromGrid</th>
+        <th>toGrid</th>
+        <th>fix</th>
+        <th>CHF<br>fromGrid</th>
+        <th>toGrid</th>
+        <th>net</th>
+        <th>Ladestation</th>
+        <th class="total">Total</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="footnotes">
+  [*ohne Ladestation] &nbsp;·&nbsp; [CHF fromGrid inkl. Fix-Anteil] &nbsp;·&nbsp;
+  [Ladestation CHF = Ladestation kWh × fromGrid-Tarif des Monats] &nbsp;·&nbsp;
+  Tarifzuordnung pro Monat: Preis gültig am 1. des Monats.
+</div>
+
+<script>
+const TURSO_URL = "https://munotstadtenergydb-munotstadt.aws-eu-west-1.turso.io/v2/pipeline";
+const TURSO_READONLY_TOKEN = "__TURSO_READONLY_TOKEN__";
+const CACHE_KEY = "munotstadt_costs_cache_v1";
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const JSON_FALLBACK_URL = "data/solarmanager_daily.json";
+
+const fmt = (n, d = 0) => (n === null || n === undefined || isNaN(n)) ? "–" :
+  n.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+async function tursoQuery(sql) {
+  const res = await fetch(TURSO_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + TURSO_READONLY_TOKEN
+    },
+    body: JSON.stringify({
+      requests: [
+        { type: "execute", stmt: { sql } },
+        { type: "close" }
+      ]
+    })
+  });
+  if (!res.ok) throw new Error("Turso HTTP " + res.status);
+  const data = await res.json();
+  const result = data.results?.[0]?.response?.result;
+  if (!result) throw new Error("Turso: kein Ergebnis");
+  const cols = result.cols.map(c => c.name);
+  return result.rows.map(row => {
+    const obj = {};
+    cols.forEach((name, i) => {
+      const cell = row[i];
+      obj[name] = cell && cell.value !== undefined ? cell.value : null;
+    });
+    return obj;
+  });
+}
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed;
+  } catch (e) { return null; }
+}
+
+function writeCache(payload) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload }));
+  } catch (e) { /* ignore quota errors */ }
+}
+
+function monthKey(dateIso) { return dateIso.slice(0, 7); } // YYYY-MM
+
+function aggregateMonthly(rows) {
+  const months = {};
+  for (const r of rows) {
+    const key = monthKey(r.Date_ISO);
+    if (!months[key]) {
+      months[key] = { consumption: 0, ladestation: 0, production: 0, fromGrid: 0, toGrid: 0 };
+    }
+    const m = months[key];
+    m.consumption += Number(r.Consumption_kWh) || 0;
+    m.ladestation += Number(r.Ladestation_kWh) || 0;
+    m.production  += Number(r.Production_kWh) || 0;
+    m.fromGrid    += Number(r.GridFrom_kWh) || 0;
+    m.toGrid      += Number(r.GridTo_kWh) || 0;
+  }
+  return months;
+}
+
+function findPriceForMonth(prices, monthKeyStr) {
+  const monthStart = monthKeyStr + "-01";
+  const candidates = prices.filter(p => p.valid_from <= monthStart && p.valid_to >= monthStart);
+  if (candidates.length === 0) return null;
+  const confirmed = candidates.find(p => p.status === "CONFIRMED");
+  return confirmed || candidates[0];
+}
+
+function buildRows(monthly, prices) {
+  const keys = Object.keys(monthly).sort().reverse(); // neuster zuoberst
+  return keys.map(key => {
+    const m = monthly[key];
+    const price = findPriceForMonth(prices, key);
+    const consumptionOhneLadestation = m.consumption - m.ladestation;
+
+    let fromGridRate = null, toGridRate = null, fixRate = null;
+    let costFromGrid = null, costToGrid = null, net = null, costLadestation = null, total = null;
+    let estimate = false;
+
+    if (price) {
+      fromGridRate = Number(price.from_grid_CHF);
+      toGridRate = Number(price.to_grid_CHF);
+      fixRate = Number(price.fix_CHF);
+      estimate = price.status !== "CONFIRMED";
+
+      costFromGrid = m.fromGrid * fromGridRate + fixRate;
+      costToGrid = -(m.toGrid * toGridRate);
+      net = costFromGrid + costToGrid;
+      costLadestation = m.ladestation * fromGridRate;
+      total = net + costLadestation;
+    }
+
+    return { key, m, consumptionOhneLadestation, fromGridRate, toGridRate, fixRate,
+      costFromGrid, costToGrid, net, costLadestation, total, estimate };
+  });
+}
+
+function monthLabel(key) {
+  const [y, mo] = key.split("-");
+  const names = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  return names[parseInt(mo, 10) - 1] + " " + y.slice(2);
+}
+
+function render(rows) {
+  const tbody = document.getElementById("rows");
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const badge = r.key ? "" : "";
+    tr.innerHTML = `
+      <td>${monthLabel(r.key)}${r.estimate ? '<span class="badge estimate">Schätzung</span>' : ''}</td>
+      <td>${fmt(r.consumptionOhneLadestation)}</td>
+      <td>${fmt(r.m.ladestation)}</td>
+      <td>${fmt(r.m.production)}</td>
+      <td>${fmt(r.m.fromGrid)}</td>
+      <td>${fmt(r.m.toGrid)}</td>
+      <td>${r.fromGridRate !== null ? fmt(r.fromGridRate, 5) : "–"}</td>
+      <td>${r.toGridRate !== null ? fmt(r.toGridRate, 5) : "–"}</td>
+      <td>${r.fixRate !== null ? fmt(r.fixRate, 3) : "–"}</td>
+      <td>${r.costFromGrid !== null ? fmt(r.costFromGrid, 2) : "–"}</td>
+      <td class="${r.costToGrid < 0 ? 'net-neg' : ''}">${r.costToGrid !== null ? fmt(r.costToGrid, 2) : "–"}</td>
+      <td class="${r.net < 0 ? 'net-neg' : ''}">${r.net !== null ? fmt(r.net, 2) : "–"}</td>
+      <td>${r.costLadestation !== null ? fmt(r.costLadestation, 2) : "–"}</td>
+      <td class="total">${r.total !== null ? fmt(r.total, 2) : "–"}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function setStatus(text, isError = false) {
+  const el = document.getElementById("status");
+  el.textContent = text;
+  el.classList.toggle("error", isError);
+}
+
+async function fetchFromTurso() {
+  const [dataRows, priceRows] = await Promise.all([
+    tursoQuery("SELECT Date_ISO, Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh, Ladestation_kWh FROM solarmanager_data ORDER BY Date_ISO"),
+    tursoQuery("SELECT id, valid_from, valid_to, to_grid_CHF, from_grid_CHF, fix_CHF, status FROM ekz_energy_prices")
+  ]);
+  return { dataRows, priceRows };
+}
+
+async function fetchFromJsonFallback() {
+  const res = await fetch(JSON_FALLBACK_URL);
+  if (!res.ok) throw new Error("Fallback-JSON HTTP " + res.status);
+  const json = await res.json();
+  // Fallback enthält keine Preisdaten -> nur kWh-Spalten anzeigen, keine CHF-Berechnung möglich
+  return { dataRows: json, priceRows: [] };
+}
+
+async function load() {
+  const cached = readCache();
+  if (cached) {
+    const { dataRows, priceRows } = cached.payload;
+    render(buildRows(aggregateMonthly(dataRows), priceRows));
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    setStatus(`Aus Cache (${ageMin} Min. alt) — aktualisiere im Hintergrund…`);
+  } else {
+    setStatus("Lade von Turso…");
+  }
+
+  const isStale = !cached || (Date.now() - cached.ts > CACHE_TTL_MS);
+  if (!isStale) {
+    setStatus(`Aus Cache (aktuell, < 15 Min.)`);
+    return;
+  }
+
+  try {
+    const payload = await fetchFromTurso();
+    writeCache(payload);
+    render(buildRows(aggregateMonthly(payload.dataRows), payload.priceRows));
+    setStatus("Live von Turso — " + new Date().toLocaleTimeString("de-CH"));
+  } catch (err) {
+    console.error("Turso-Fehler:", err);
+    if (cached) {
+      setStatus("Turso nicht erreichbar — zeige Cache-Stand.", true);
+    } else {
+      try {
+        const payload = await fetchFromJsonFallback();
+        render(buildRows(aggregateMonthly(payload.dataRows), payload.priceRows));
+        setStatus("Turso nicht erreichbar — Fallback auf statisches JSON (ohne Tarife).", true);
+      } catch (err2) {
+        console.error("Fallback-Fehler:", err2);
+        setStatus("Keine Daten verfügbar (Turso und Fallback fehlgeschlagen).", true);
+      }
+    }
+  }
+}
+
+load();
+</script>
+</body>
+</html>
