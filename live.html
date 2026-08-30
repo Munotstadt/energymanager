@@ -105,6 +105,8 @@
   .refresh-btn:hover{opacity:.85;}
   .refresh-btn:disabled{opacity:.5; cursor:default;}
   .today-est .kpi .value{font-size:1.1rem;}
+  .device-grid .kpi .value{font-size:1.1rem;}
+  .device-grid .kpi .today-sub{font-size:0.7rem; color:var(--text-dim); margin-top:3px;}
   .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
   .legend .item{display:flex; align-items:center; gap:5px;}
   .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
@@ -139,10 +141,14 @@
   <div id="status">Lade Live-Daten...</div>
   <div id="content" style="display:none;">
 
-    <div class="kpi-grid" id="kpiGrid"></div>
+    <h2>Aktuell</h2>
+    <div class="kpi-grid" id="kpiGridNow"></div>
 
     <h2>Heute <span class="hint">geschätzt, bis jetzt &middot; aus Live-Daten hochgerechnet</span></h2>
-    <div class="kpi-grid today-est" id="todayEstGrid"></div>
+    <div class="kpi-grid today-est" id="kpiGridToday"></div>
+
+    <h2>Geräte <span class="hint">aktuell (W) &middot; heute (kWh)</span></h2>
+    <div class="kpi-grid device-grid" id="kpiGridDevices"></div>
 
     <h2>Produktion &amp; Verbrauch <span class="hint">letzte 24 Stunden</span></h2>
     <div class="card">
@@ -273,43 +279,69 @@ function renderLegend(containerId, series){
 }
 
 // ---------- KPI-Kacheln ----------
-function dayTotalHtml(kwh){
-  return kwh !== null && kwh !== undefined ? `<div class="daytotal">Tagestotal: ${fmt(kwh,1)} kWh</div>` : '';
+const MAIN_METER_DEVICE_IDS = new Set([
+  "65168ab128ec518afa0f665f", // PV-Erzeugung (spiegelt points.pv)
+  "6516885afd811a3c709c5bc2", // Gesamtverbrauch (spiegelt points.consumption)
+]);
+const KNOWN_APPLIANCE_LABELS = {
+  ladestation: "Ladestation",
+  entfeuchter: "Entfeuchter Waschen",
+  wasserpumpe: "Wasserpumpe",
+};
+
+function classifyDeviceName(name){
+  const n = (name || '').toLowerCase();
+  if (n.includes('ladestation')) return 'ladestation';
+  if (n.includes('entfeuchter') || n.includes('waschen')) return 'entfeuchter';
+  if (n.includes('wasserpumpe')) return 'wasserpumpe';
+  return 'others';
 }
 
-function matchDeviceDayTotal(name, dayTotals){
-  if (!dayTotals) return null;
-  const n = name.toLowerCase();
-  if (n.includes('ladestation')) return dayTotals.Ladestation;
-  if (n.includes('entfeuchter') || n.includes('waschen')) return dayTotals.Entfeuchter;
-  if (n.includes('wasserpumpe')) return dayTotals.Wasserpumpe;
-  return null;
-}
-
-function renderKpis(latestPoint, latestDeviceByName, dayTotals){
-  const cards = [];
-  cards.push({cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–',
-    daytotal: dayTotalHtml(dayTotals ? dayTotals.consumption : null)});
-  cards.push({cls:'pv', label:'PV-Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–',
-    daytotal: dayTotalHtml(dayTotals ? dayTotals.production : null)});
-  if (latestPoint && latestPoint.grid !== null){
-    const fromGrid = latestPoint.grid > 0;
-    cards.push({cls: fromGrid ? 'grid-from' : 'grid-to', label: fromGrid ? 'Netzbezug' : 'Einspeisung', value: `${fmt(Math.abs(latestPoint.grid))} <small>W</small>`,
-      daytotal: dayTotalHtml(dayTotals ? (fromGrid ? dayTotals.gridFrom : dayTotals.gridTo) : null)});
-  } else {
-    cards.push({cls:'grid-from', label:'Netz', value:'–', daytotal:''});
-  }
-  Object.entries(latestDeviceByName).forEach(([name, power]) => {
-    cards.push({cls:'', label:name, value: `${fmt(power)} <small>W</small>`,
-      daytotal: dayTotalHtml(matchDeviceDayTotal(name, dayTotals))});
-  });
-  document.getElementById('kpiGrid').innerHTML = cards.map(c => `
+function renderKpiGroup(containerId, cards){
+  document.getElementById(containerId).innerHTML = cards.map(c => `
     <div class="kpi ${c.cls}">
       <div class="label">${c.label}</div>
       <div class="value">${c.value}</div>
-      ${c.daytotal}
+      ${c.sub || ''}
     </div>
   `).join('');
+}
+
+function renderNowKpis(latestPoint){
+  const grid = latestPoint ? latestPoint.grid : null;
+  const gridFromW = grid !== null && grid > 0 ? grid : 0;
+  const gridToW = grid !== null && grid < 0 ? -grid : 0;
+  renderKpiGroup('kpiGridNow', [
+    {cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–'},
+    {cls:'pv', label:'Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–'},
+    {cls:'grid-from', label:'Netzbezug', value: latestPoint ? `${fmt(gridFromW)} <small>W</small>` : '–'},
+    {cls:'grid-to', label:'Einspeisung', value: latestPoint ? `${fmt(gridToW)} <small>W</small>` : '–'},
+  ]);
+}
+
+function renderTodayKpis(est){
+  renderKpiGroup('kpiGridToday', [
+    {cls:'cons', label:'Verbrauch', value:`${fmt(est.consumption_kwh, 1)} <small>kWh</small>`},
+    {cls:'pv', label:'Produktion', value:`${fmt(est.production_kwh, 1)} <small>kWh</small>`},
+    {cls:'grid-from', label:'Netzbezug', value:`${fmt(est.gridFrom_kwh, 1)} <small>kWh</small>`},
+    {cls:'grid-to', label:'Einspeisung', value:`${fmt(est.gridTo_kwh, 1)} <small>kWh</small>`},
+  ]);
+}
+
+function renderDeviceKpis(latestDeviceByName, todayKwhByCategory){
+  const order = ['ladestation', 'entfeuchter', 'wasserpumpe', 'others'];
+  const cards = order.map(cat => {
+    const label = KNOWN_APPLIANCE_LABELS[cat] || 'Übrige';
+    const nowW = latestDeviceByName[cat] ?? null;
+    const todayKwh = todayKwhByCategory[cat] ?? 0;
+    return {
+      cls: '',
+      label,
+      value: nowW !== null ? `${fmt(nowW)} <small>W</small>` : '–',
+      sub: `<div class="today-sub">Heute: ${fmt(todayKwh, 2)} kWh</div>`,
+    };
+  });
+  renderKpiGroup('kpiGridDevices', cards);
 }
 
 let refreshTimer = null;
@@ -351,19 +383,39 @@ function estimateTodayFromPoints(points){
 }
 
 function renderTodayEstimate(points){
-  const est = estimateTodayFromPoints(points);
-  const cards = [
-    {cls:'cons', label:'Verbrauch', value:`${fmt(est.consumption_kwh, 1)} <small>kWh</small>`},
-    {cls:'pv', label:'Produktion', value:`${fmt(est.production_kwh, 1)} <small>kWh</small>`},
-    {cls:'grid-from', label:'Netzbezug', value:`${fmt(est.gridFrom_kwh, 1)} <small>kWh</small>`},
-    {cls:'grid-to', label:'Einspeisung', value:`${fmt(est.gridTo_kwh, 1)} <small>kWh</small>`},
-  ];
-  document.getElementById('todayEstGrid').innerHTML = cards.map(c => `
-    <div class="kpi ${c.cls}">
-      <div class="label">${c.label}</div>
-      <div class="value">${c.value}</div>
-    </div>
-  `).join('');
+  return estimateTodayFromPoints(points);
+}
+
+// ---------- Heute-Schaetzung pro Geraet (Trapez-Integration je Kategorie) ----------
+function estimateTodayPerDeviceCategory(deviceReadings, deviceNames){
+  const todayIso = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Zurich'}).format(new Date());
+  const byDevice = {};
+  deviceReadings.forEach(r => {
+    if (MAIN_METER_DEVICE_IDS.has(r.device_id)) return;
+    const dateIso = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Zurich'}).format(toLocalDate(r.fetched_at));
+    if (dateIso !== todayIso) return;
+    if (!byDevice[r.device_id]) byDevice[r.device_id] = [];
+    byDevice[r.device_id].push(r);
+  });
+
+  const kwhByCategory = { ladestation: 0, entfeuchter: 0, wasserpumpe: 0, others: 0 };
+  Object.entries(byDevice).forEach(([deviceId, readings]) => {
+    const name = deviceNames[deviceId] || deviceId;
+    const category = classifyDeviceName(name);
+    const sorted = readings.slice().sort((a,b) => toLocalDate(a.fetched_at) - toLocalDate(b.fetched_at));
+    let wh = 0;
+    for (let i = 1; i < sorted.length; i++){
+      const prev = sorted[i-1], cur = sorted[i];
+      const hours = (toLocalDate(cur.fetched_at) - toLocalDate(prev.fetched_at)) / 3600000;
+      if (hours <= 0 || hours > 1) continue;
+      if (prev.power !== null && cur.power !== null){
+        wh += (prev.power + cur.power) / 2 * hours;
+      }
+    }
+    kwhByCategory[category] += wh / 1000;
+  });
+
+  return kwhByCategory;
 }
 
 // ---------- Manuelles Aktualisieren: Collector-Worker antriggern ----------
@@ -400,21 +452,35 @@ async function load(){
       : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
     document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api (live) · Aktualisierung alle ${REFRESH_MS/60000} Min (Cloudflare Worker Cron)`;
 
-    // Geraete: neuesten Wert je Geraet ermitteln + pro Geraet Zeitreihe bauen
+    // Geraete (ohne Haupt-Messgeraete PV/Verbrauch): neuesten Wert je Kategorie
+    // ermitteln + pro Geraet Zeitreihe fuer den Chart bauen
     const byDevice = {};
     deviceReadings.forEach(r => {
       const name = deviceNames[r.device_id] || r.device_id;
       if (!byDevice[name]) byDevice[name] = [];
       byDevice[name].push(r);
     });
-    const latestDeviceByName = {};
+    const latestByCategory = { ladestation: null, entfeuchter: null, wasserpumpe: null, others: 0 };
+    let othersHasData = false;
     Object.entries(byDevice).forEach(([name, arr]) => {
-      const last = arr[arr.length-1];
-      latestDeviceByName[name] = last ? last.power : null;
+      const last = arr[arr.length - 1];
+      if (!last || MAIN_METER_DEVICE_IDS.has(last.device_id)) return;
+      const category = classifyDeviceName(name);
+      if (category === 'others'){
+        othersHasData = true;
+        latestByCategory.others += (last.power || 0);
+      } else {
+        latestByCategory[category] = last.power;
+      }
     });
+    if (!othersHasData) latestByCategory.others = null;
 
-    renderKpis(latestPoint, latestDeviceByName, dayTotals);
-    renderTodayEstimate(points);
+    const todayEst = renderTodayEstimate(points);
+    const todayKwhByCategory = estimateTodayPerDeviceCategory(deviceReadings, deviceNames);
+
+    renderNowKpis(latestPoint);
+    renderTodayKpis(todayEst);
+    renderDeviceKpis(latestByCategory, todayKwhByCategory);
 
     // Hauptchart: Produktion / Verbrauch / Netzbezug
     const mainSeries = [
