@@ -146,6 +146,34 @@ async function handleThresholdsSet(request, env) {
   return jsonResponse({ ok: true, min_einspeisung_wh: minEinspeisungWh, max_netzbezug_wh: maxNetzbezugWh });
 }
 
+/* ---------------------------------------------------------------------- *
+ * Ziel-SoC (ersetzt config/car_target_soc.json, GitHub)
+ * ---------------------------------------------------------------------- */
+
+async function handleTargetSocGet(request, env) {
+  const row = await env.DB
+    .prepare("SELECT target_soc_percent FROM car_charging_config WHERE id = 1")
+    .first();
+  return jsonResponse({ target_soc_percent: row ? row.target_soc_percent : null });
+}
+
+async function handleTargetSocSet(request, env) {
+  const body = await request.json();
+  const val = Number(body.target_soc_percent);
+  if (!Number.isFinite(val) || val < 0 || val > 100) {
+    return jsonResponse({ error: "target_soc_percent (0-100) erforderlich" }, 400);
+  }
+  await env.DB.prepare(`
+    INSERT INTO car_charging_config (id, target_soc_percent, updated_at)
+    VALUES (1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      target_soc_percent=excluded.target_soc_percent,
+      updated_at=excluded.updated_at`)
+    .bind(val, nowZurich())
+    .run();
+  return jsonResponse({ ok: true, target_soc_percent: val });
+}
+
 async function runCarChargingAutomation(env) {
   const db = env.DB;
   const thresholds = await getThresholds(db, env);
@@ -545,6 +573,10 @@ export default {
         resp = await handleThresholdsGet(request, env);
       } else if (pathname === "/api/config/thresholds" && request.method === "POST") {
         resp = await handleThresholdsSet(request, env);
+      } else if (pathname === "/api/config/target-soc" && request.method === "GET") {
+        resp = await handleTargetSocGet(request, env);
+      } else if (pathname === "/api/config/target-soc" && request.method === "POST") {
+        resp = await handleTargetSocSet(request, env);
       } else if (pathname === "/api/data/live" && request.method === "GET") {
         resp = await handleLiveData(request, env);
       } else if (pathname === "/api/data/car" && request.method === "GET") {
