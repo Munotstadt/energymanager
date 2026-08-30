@@ -119,7 +119,10 @@
       <div class="footnotes">
         [*ohne Ladestation] &nbsp;·&nbsp; [CHF fromGrid inkl. Fix-Gebühr] &nbsp;·&nbsp;
         [Ladestation CHF = Ladestation kWh × fromGrid-Tarif] &nbsp;·&nbsp;
-        Tarif je Monat: gültige Periode am 1. des Monats.
+        Tarif je Monat: gültige Periode am 1. des Monats. &nbsp;·&nbsp;
+        Fehlende/zukünftige Tage: Schätzung je Kalendertag (Consumption, Production,
+        Ladestation, fromGrid, toGrid unabhängig) als Durchschnitt desselben Tages
+        über alle vorhandenen Vorjahre; Prognose für die nächsten 18 Monate.
       </div>
     </div>
 
@@ -179,17 +182,109 @@ async function fetchAll(){
   return { dataRows, priceRows };
 }
 
+// ---------- Schätzung fehlender/zukünftiger Tage ----------
+const ESTIMATE_FIELDS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Ladestation_kWh"];
+const FUTURE_MONTHS = 18;
+
+function todayIsoZurich(){
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+}
+
+function daysInMonth(year, month1){ // month1: 1-12
+  return new Date(year, month1, 0).getDate();
+}
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+function buildHistoricalAverages(dataRows){
+  // Pro Kalendertag (MM-DD): Summe/Anzahl je Feld, über alle vorhandenen Jahre.
+  const byDay = {};   // 'MM-DD' -> {field: {sum,count}}
+  const byMonth = {}; // 'MM'    -> {field: {sum,count}}  (Fallback, z.B. 29. Feb.)
+  const overall = {}; // Feld    -> {sum,count}            (Fallback, falls Monat komplett ohne Historie)
+  ESTIMATE_FIELDS.forEach(f => { overall[f] = {sum:0,count:0}; });
+
+  dataRows.forEach(r => {
+    const mmdd = r.Date_ISO.slice(5,10);
+    const mm = r.Date_ISO.slice(5,7);
+    if (!byDay[mmdd]) byDay[mmdd] = {};
+    if (!byMonth[mm]) byMonth[mm] = {};
+    ESTIMATE_FIELDS.forEach(f => {
+      const v = Number(r[f]) || 0;
+      if (!byDay[mmdd][f]) byDay[mmdd][f] = {sum:0,count:0};
+      byDay[mmdd][f].sum += v; byDay[mmdd][f].count += 1;
+      if (!byMonth[mm][f]) byMonth[mm][f] = {sum:0,count:0};
+      byMonth[mm][f].sum += v; byMonth[mm][f].count += 1;
+      overall[f].sum += v; overall[f].count += 1;
+    });
+  });
+
+  function estimateValue(field, mmdd, mm){
+    const d = byDay[mmdd] && byDay[mmdd][field];
+    if (d && d.count > 0) return d.sum / d.count;
+    const m = byMonth[mm] && byMonth[mm][field];
+    if (m && m.count > 0) return m.sum / m.count;
+    const o = overall[field];
+    return (o && o.count > 0) ? o.sum / o.count : 0;
+  }
+
+  return { estimateValue };
+}
+
+function buildEstimatedRow(dateIso, hist){
+  const mmdd = dateIso.slice(5,10);
+  const mm = dateIso.slice(5,7);
+  const row = { Date_ISO: dateIso, _estimated: true };
+  ESTIMATE_FIELDS.forEach(f => { row[f] = hist.estimateValue(f, mmdd, mm); });
+  return row;
+}
+
+// Ergänzt: (a) fehlende Tage im laufenden Monat, (b) die naechsten FUTURE_MONTHS
+// vollstaendigen Monate -- jeweils per historischem Tages-Durchschnitt (gleicher
+// Kalendertag ueber alle vorhandenen Jahre). Ladestation/Consumption/Production
+// werden unabhaengig geschaetzt; fromGrid/toGrid ebenso (eigene Historie je Tag).
+function withEstimatedRows(dataRows){
+  if (dataRows.length === 0) return dataRows;
+  const hist = buildHistoricalAverages(dataRows);
+  const actualDates = new Set(dataRows.map(r => r.Date_ISO));
+  const today = todayIsoZurich();
+  const [ty, tm] = today.split('-').map(Number);
+  const extra = [];
+
+  // (a) fehlende Tage im laufenden Monat (inkl. evtl. noch nicht synchronisierter
+  // Tage vor heute sowie der restlichen Tage bis Monatsende)
+  const dim = daysInMonth(ty, tm);
+  for (let d = 1; d <= dim; d++){
+    const iso = `${ty}-${pad2(tm)}-${pad2(d)}`;
+    if (!actualDates.has(iso)) extra.push(buildEstimatedRow(iso, hist));
+  }
+
+  // (b) naechste FUTURE_MONTHS volle Monate
+  let y = ty, m = tm;
+  for (let i = 0; i < FUTURE_MONTHS; i++){
+    m += 1;
+    if (m > 12){ m = 1; y += 1; }
+    const dimF = daysInMonth(y, m);
+    for (let d = 1; d <= dimF; d++){
+      extra.push(buildEstimatedRow(`${y}-${pad2(m)}-${pad2(d)}`, hist));
+    }
+  }
+
+  return dataRows.concat(extra);
+}
+
 function monthlyAggregates(rows){
   const map = {};
   rows.forEach(r => {
     const key = r.Date_ISO.slice(0,7);
-    if (!map[key]) map[key] = { key, Consumption_kWh:0, Production_kWh:0, GridFrom_kWh:0, GridTo_kWh:0, Ladestation_kWh:0 };
+    if (!map[key]) map[key] = { key, Consumption_kWh:0, Production_kWh:0, GridFrom_kWh:0, GridTo_kWh:0, Ladestation_kWh:0, estimatedDays:0, totalDays:0 };
     const m = map[key];
     m.Consumption_kWh += r.Consumption_kWh || 0;
     m.Production_kWh  += r.Production_kWh || 0;
     m.GridFrom_kWh     += r.GridFrom_kWh || 0;
     m.GridTo_kWh        += r.GridTo_kWh || 0;
     m.Ladestation_kWh    += r.Ladestation_kWh || 0;
+    m.totalDays += 1;
+    if (r._estimated) m.estimatedDays += 1;
   });
   return Object.values(map).sort((a,b)=> a.key < b.key ? -1 : 1);
 }
@@ -210,11 +305,14 @@ function buildCostRows(monthly, prices){
   return monthly.slice().reverse().map(m => {
     const price = findPriceForMonth(prices, m.key);
     const consumptionOhneLadestation = m.Consumption_kWh - m.Ladestation_kWh;
+    const dataEstimate = m.estimatedDays > 0
+      ? (m.estimatedDays >= m.totalDays ? 'full' : 'partial')
+      : null;
     let out = {
-      label: monthLabel(m.key), m, consumptionOhneLadestation,
+      label: monthLabel(m.key), m, consumptionOhneLadestation, dataEstimate,
       fromGridRate:null, toGridRate:null, fixRate:null,
       costFromGrid:null, costToGrid:null, net:null, costLadestation:null, total:null,
-      estimate:false, noPrice: !price
+      priceEstimate:false, noPrice: !price
     };
     if (price){
       const fromGridRate = Number(price.from_grid_CHFkWh);
@@ -225,7 +323,7 @@ function buildCostRows(monthly, prices){
       const net = costFromGrid + costToGrid;
       const costLadestation = m.Ladestation_kWh * fromGridRate;
       out = {...out, fromGridRate, toGridRate, fixRate, costFromGrid, costToGrid, net,
-        costLadestation, total: net + costLadestation, estimate: price.status !== "CONFIRMED"};
+        costLadestation, total: net + costLadestation, priceEstimate: price.status !== "CONFIRMED"};
     }
     return out;
   });
@@ -256,7 +354,7 @@ function renderCostsTable(rows){
   </tr>`;
   const body = rows.map(r => `
     <tr>
-      <td>${r.label}${r.estimate ? '<span class="badge estimate">Schätzung</span>' : ''}${r.noPrice ? '<span class="badge">kein Tarif</span>' : ''}</td>
+      <td>${r.label}${r.dataEstimate==='full' ? '<span class="badge estimate">Prognose</span>' : ''}${r.dataEstimate==='partial' ? '<span class="badge estimate">teilw. geschätzt</span>' : ''}${r.priceEstimate ? '<span class="badge estimate">Tarif-Schätzung</span>' : ''}${r.noPrice ? '<span class="badge">kein Tarif</span>' : ''}</td>
       <td>${fmt(r.consumptionOhneLadestation,0)}</td>
       <td>${fmt(r.m.Ladestation_kWh,0)}</td>
       <td>${fmt(r.m.Production_kWh,0)}</td>
@@ -276,7 +374,8 @@ function renderCostsTable(rows){
 }
 
 function applyData(payload, sourceLabel){
-  const monthly = monthlyAggregates(payload.dataRows);
+  const enrichedRows = withEstimatedRows(payload.dataRows);
+  const monthly = monthlyAggregates(enrichedRows);
   if (monthly.length === 0){
     document.getElementById('status').textContent = "Noch keine Daten vorhanden.";
     return;
@@ -284,7 +383,7 @@ function applyData(payload, sourceLabel){
   const rows = buildCostRows(monthly, payload.priceRows || []);
   document.getElementById('status').style.display = 'none';
   document.getElementById('content').style.display = 'block';
-  document.getElementById('subline').textContent = `${monthly.length} Monate`;
+  document.getElementById('subline').textContent = `${monthly.length} Monate · inkl. Prognose für die nächsten ${FUTURE_MONTHS} Monate`;
   document.getElementById('footerInfo').textContent = `Datenquelle: ${sourceLabel}`;
   renderCostsTable(rows);
 }
