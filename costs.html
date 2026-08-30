@@ -217,8 +217,8 @@ function buildCostRows(monthly, prices){
       estimate:false, noPrice: !price
     };
     if (price){
-      const fromGridRate = Number(price.from_grid_chfkwh);
-      const toGridRate = Number(price.to_grid_chfkwh);
+      const fromGridRate = Number(price.from_grid_CHFkWh);
+      const toGridRate = Number(price.to_grid_CHFkWh);
       const fixRate = Number(price.fix_CHF);
       const costFromGrid = m.GridFrom_kWh * fromGridRate + fixRate;
       const costToGrid = -(m.GridTo_kWh * toGridRate);
