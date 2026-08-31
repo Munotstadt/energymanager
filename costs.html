@@ -82,6 +82,7 @@
   th, td{padding:8px 12px;}
   td.neg, .neg{color:var(--accent);}
   td.total-col{font-weight:600;}
+  th.total-expense-col, td.total-expense-col{font-weight:700;}
   .badge{font-size:0.62rem; padding:1px 5px; border-radius:4px; border:1px solid var(--grey-300); color:var(--text-dim); margin-left:5px; text-transform:none; letter-spacing:0;}
   .badge.estimate{color:var(--accent); border-color:var(--accent);}
 
@@ -145,6 +146,21 @@
         <div class="filter-group">
           <label>Von <select id="filterFrom"></select></label>
           <label>Bis <select id="filterTo"></select></label>
+          <label>Monat <select id="filterMonthOfYear">
+            <option value="">Alle</option>
+            <option value="01">Jan</option>
+            <option value="02">Feb</option>
+            <option value="03">Mär</option>
+            <option value="04">Apr</option>
+            <option value="05">Mai</option>
+            <option value="06">Jun</option>
+            <option value="07">Jul</option>
+            <option value="08">Aug</option>
+            <option value="09">Sep</option>
+            <option value="10">Okt</option>
+            <option value="11">Nov</option>
+            <option value="12">Dez</option>
+          </select></label>
           <button id="filterResetBtn" class="filter-reset" type="button">Zurücksetzen</button>
         </div>
         <button id="exportBtn" class="export-btn" disabled>&#8595; Excel-Export</button>
@@ -438,7 +454,7 @@ function renderCostsTable(rows){
     <th data-key="fix_rate">fix${sortArrow('fix_rate')}</th>
     <th data-key="chf_fromgrid">fromGrid${sortArrow('chf_fromgrid')}</th>
     <th data-key="chf_togrid">toGrid${sortArrow('chf_togrid')}</th>
-    <th data-key="total_expense">Total Expense${sortArrow('total_expense')}</th>
+    <th data-key="total_expense" class="total-expense-col">Total Expense${sortArrow('total_expense')}</th>
     <th data-key="chf_ladestation">Ladestation${sortArrow('chf_ladestation')}</th>
     <th data-key="net_budgeting">net, Budgeting${sortArrow('net_budgeting')}</th>
   </tr>`;
@@ -455,7 +471,7 @@ function renderCostsTable(rows){
       <td>${r.fixRate!==null ? fmt(r.fixRate,3) : '–'}</td>
       <td>${r.costFromGrid!==null ? fmt(r.costFromGrid,0) : '–'}</td>
       <td class="${r.costToGrid<0?'neg':''}">${r.costToGrid!==null ? fmt(r.costToGrid,0) : '–'}</td>
-      <td class="${r.net<0?'neg':''}">${r.net!==null ? fmt(r.net,0) : '–'}</td>
+      <td class="total-expense-col ${r.net<0?'neg':''}">${r.net!==null ? fmt(r.net,0) : '–'}</td>
       <td>${r.costLadestation!==null ? fmt(r.costLadestation,0) : '–'}</td>
       <td class="total-col">${r.total!==null ? fmt(r.total,0) : '–'}</td>
     </tr>
@@ -495,7 +511,7 @@ function renderTotalsRow(rows){
       <td>–</td>
       <td>${fmt(chfFromGrid,0)}</td>
       <td class="${chfToGrid<0?'neg':''}">${fmt(chfToGrid,0)}</td>
-      <td class="${totalExpense<0?'neg':''}">${fmt(totalExpense,0)}</td>
+      <td class="total-expense-col ${totalExpense<0?'neg':''}">${fmt(totalExpense,0)}</td>
       <td>${fmt(chfLadestation,0)}</td>
       <td>${fmt(netBudgeting,0)}</td>
     </tr>`;
@@ -515,15 +531,19 @@ function populateFilterSelects(){
 function applyFilterAndRender(){
   const fromSel = document.getElementById('filterFrom');
   const toSel = document.getElementById('filterTo');
-  const fromKey = fromSel.value, toKey = toSel.value;
+  const moySel = document.getElementById('filterMonthOfYear');
+  const fromKey = fromSel.value, toKey = toSel.value, moy = moySel.value;
   const keysAsc = [...new Set(ALL_ROWS.map(r => r.m.key))].sort();
   const minKey = keysAsc[0], maxKey = keysAsc[keysAsc.length - 1];
 
-  const filtered = ALL_ROWS.filter(r => r.m.key >= fromKey && r.m.key <= toKey);
+  const filtered = ALL_ROWS.filter(r =>
+    r.m.key >= fromKey && r.m.key <= toKey &&
+    (moy === "" || r.m.key.slice(5,7) === moy)
+  );
   const sorted = sortRows(filtered);
   renderCostsTable(sorted);
 
-  const isFiltered = fromKey !== minKey || toKey !== maxKey;
+  const isFiltered = fromKey !== minKey || toKey !== maxKey || moy !== "";
   renderTotalsRow(isFiltered ? sorted : null);
 
   CURRENT_ROWS = sorted;
@@ -620,8 +640,10 @@ document.getElementById('filterTo').addEventListener('change', () => {
   if (toSel.value < fromSel.value) fromSel.value = toSel.value;
   applyFilterAndRender();
 });
+document.getElementById('filterMonthOfYear').addEventListener('change', applyFilterAndRender);
 document.getElementById('filterResetBtn').addEventListener('click', () => {
   populateFilterSelects();
+  document.getElementById('filterMonthOfYear').value = "";
   applyFilterAndRender();
 });
 document.getElementById('costsTable').addEventListener('click', (e) => {
