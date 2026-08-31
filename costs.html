@@ -90,7 +90,22 @@
   .footnotes{color:var(--text-dim); font-size:0.72rem; line-height:1.6; margin-top:8px;}
   a{color:var(--accent);}
 
-  .table-toolbar{display:flex; justify-content:flex-end; margin-bottom:8px;}
+  .table-toolbar{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; flex-wrap:wrap;}
+  .filter-group{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-dim); font-family:'Inter',sans-serif; flex-wrap:wrap;}
+  .filter-group label{display:flex; align-items:center; gap:6px;}
+  .filter-group select{
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px; padding:5px 8px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+  }
+  .filter-reset{
+    background:none; border:1px solid transparent; color:var(--text-dim);
+    font-family:'Inter',sans-serif; font-size:12.5px; cursor:pointer; padding:5px 6px; text-decoration:underline;
+  }
+  .filter-reset:hover{color:var(--accent);}
+  th[data-key]{cursor:pointer; user-select:none;}
+  th[data-key]:hover{color:var(--ink);}
+  .sort-arrow{font-size:0.6rem; opacity:0.7;}
+  tr.totals-row td{border-top:2px solid var(--ink); border-bottom:none; font-weight:600; background:var(--grey-100);}
   .export-btn{
     display:inline-flex; align-items:center; gap:6px;
     background:#fff; border:1px solid var(--grey-300); border-radius:var(--radius);
@@ -127,16 +142,34 @@
     <h2>Monatsübersicht (kumuliert) <span class="hint">neuster Monat zuoberst</span></h2>
     <div class="card" style="padding-bottom:14px;">
       <div class="table-toolbar">
+        <div class="filter-group">
+          <label>Von <select id="filterFrom"></select></label>
+          <label>Bis <select id="filterTo"></select></label>
+          <button id="filterResetBtn" class="filter-reset" type="button">Zurücksetzen</button>
+        </div>
         <button id="exportBtn" class="export-btn" disabled>&#8595; Excel-Export</button>
       </div>
       <div class="table-scroll"><table id="costsTable"></table></div>
       <div class="footnotes">
         [*ohne Ladestation] &nbsp;·&nbsp; [CHF fromGrid inkl. Fix-Gebühr] &nbsp;·&nbsp;
         [Ladestation CHF = Ladestation kWh × fromGrid-Tarif] &nbsp;·&nbsp;
-        Tarif je Monat: gültige Periode am 1. des Monats. &nbsp;·&nbsp;
-        Fehlende/zukünftige Tage: Schätzung je Kalendertag (Consumption, Production,
-        Ladestation, fromGrid, toGrid unabhängig) als Durchschnitt desselben Tages
-        über alle vorhandenen Vorjahre; Prognose für die nächsten 18 Monate.
+        [net, Budgeting = Total Expense − Ladestation-Kosten] &nbsp;·&nbsp;
+        Tarif je Monat: gültige Periode am 1. des Monats.
+        <p style="margin:10px 0 4px;"><strong>Methodik Schätzung/Prognose:</strong>
+        Für jeden Tag ohne Ist-Daten — fehlende Tage im laufenden Monat sowie sämtliche
+        Tage der kommenden 18 Monate — wird ein Schätzwert eingesetzt. Dafür wird je Feld
+        unabhängig (Consumption, Production, Ladestation, fromGrid, toGrid) der historische
+        Durchschnitt für genau diesen Kalendertag (z.&nbsp;B. "15. August") über alle in der
+        Datenbank vorhandenen Jahre berechnet. Existiert für den exakten Kalendertag keine
+        Historie (z.&nbsp;B. 29. Februar ohne Schaltjahresdaten), wird ersatzweise der
+        Durchschnitt über den gesamten Monat verwendet, danach der Gesamtdurchschnitt über
+        alle vorhandenen Tage. Die CHF-Beträge werden nicht separat geschätzt, sondern
+        rechnerisch aus den geschätzten kWh-Werten und dem für den jeweiligen Monat gültigen
+        Tarif ermittelt (kWh × Tarif, zzgl. Fixkosten). Da die fünf Felder unabhängig
+        voneinander geschätzt werden, kann es bei geschätzten Monaten zu kleinen Abweichungen
+        von der Energiebilanz (Consumption + Ladestation = Production + fromGrid − toGrid)
+        kommen, die bei Ist-Daten exakt gilt. Betroffene Monate sind mit "teilw. geschätzt"
+        bzw. "Prognose" gekennzeichnet.</p>
       </div>
     </div>
 
@@ -337,34 +370,77 @@ function buildCostRows(monthly, prices){
       const net = costFromGrid + costToGrid;
       const costLadestation = m.Ladestation_kWh * fromGridRate;
       out = {...out, fromGridRate, toGridRate, fixRate, costFromGrid, costToGrid, net,
-        costLadestation, total: net + costLadestation, priceEstimate: price.status !== "CONFIRMED"};
+        costLadestation, total: net - costLadestation, priceEstimate: price.status !== "CONFIRMED"};
     }
     return out;
   });
 }
 
+const COLUMNS = [
+  { key:'month',            get:r => r.m.key },
+  { key:'consumption',      get:r => r.consumptionOhneLadestation },
+  { key:'ladestation_kwh',  get:r => r.m.Ladestation_kWh },
+  { key:'production',       get:r => r.m.Production_kWh },
+  { key:'fromgrid_kwh',     get:r => r.m.GridFrom_kWh },
+  { key:'togrid_kwh',       get:r => r.m.GridTo_kWh },
+  { key:'fromgrid_rate',    get:r => r.fromGridRate },
+  { key:'togrid_rate',      get:r => r.toGridRate },
+  { key:'fix_rate',         get:r => r.fixRate },
+  { key:'chf_fromgrid',     get:r => r.costFromGrid },
+  { key:'chf_togrid',       get:r => r.costToGrid },
+  { key:'total_expense',    get:r => r.net },
+  { key:'chf_ladestation',  get:r => r.costLadestation },
+  { key:'net_budgeting',    get:r => r.total },
+];
+
+let SORT_STATE = { key:'month', dir:'desc' };
+let ALL_ROWS = [];
+
+function sortRows(rows){
+  const col = COLUMNS.find(c => c.key === SORT_STATE.key);
+  if (!col) return rows;
+  const sorted = rows.slice().sort((a,b) => {
+    let va = col.get(a), vb = col.get(b);
+    if (typeof va === 'string' || typeof vb === 'string'){
+      va = va === null || va === undefined ? '' : String(va);
+      vb = vb === null || vb === undefined ? '' : String(vb);
+      return va < vb ? -1 : (va > vb ? 1 : 0);
+    }
+    if (va === null || va === undefined || isNaN(va)) va = -Infinity;
+    if (vb === null || vb === undefined || isNaN(vb)) vb = -Infinity;
+    return va - vb;
+  });
+  if (SORT_STATE.dir === 'desc') sorted.reverse();
+  return sorted;
+}
+
+function sortArrow(key){
+  if (SORT_STATE.key !== key) return '';
+  return SORT_STATE.dir === 'asc' ? ' <span class="sort-arrow">&#9650;</span>' : ' <span class="sort-arrow">&#9660;</span>';
+}
+
 function renderCostsTable(rows){
   const head = `
   <tr>
-    <th rowspan="2"></th>
+    <th rowspan="2" data-key="month">Monat/Jahr${sortArrow('month')}</th>
     <th colspan="5" class="group">kWh</th>
     <th colspan="3" class="group">CHF kWh</th>
     <th colspan="5" class="group">CHF</th>
   </tr>
   <tr>
-    <th>Consumption*</th>
-    <th>Ladestation</th>
-    <th>Production</th>
-    <th>fromGrid</th>
-    <th>toGrid</th>
-    <th>fromGrid</th>
-    <th>toGrid</th>
-    <th>fix</th>
-    <th>fromGrid</th>
-    <th>toGrid</th>
-    <th>net</th>
-    <th>Ladestation</th>
-    <th>Total</th>
+    <th data-key="consumption">Consumption*${sortArrow('consumption')}</th>
+    <th data-key="ladestation_kwh">Ladestation${sortArrow('ladestation_kwh')}</th>
+    <th data-key="production">Production${sortArrow('production')}</th>
+    <th data-key="fromgrid_kwh">fromGrid${sortArrow('fromgrid_kwh')}</th>
+    <th data-key="togrid_kwh">toGrid${sortArrow('togrid_kwh')}</th>
+    <th data-key="fromgrid_rate">fromGrid${sortArrow('fromgrid_rate')}</th>
+    <th data-key="togrid_rate">toGrid${sortArrow('togrid_rate')}</th>
+    <th data-key="fix_rate">fix${sortArrow('fix_rate')}</th>
+    <th data-key="chf_fromgrid">fromGrid${sortArrow('chf_fromgrid')}</th>
+    <th data-key="chf_togrid">toGrid${sortArrow('chf_togrid')}</th>
+    <th data-key="total_expense">Total Expense${sortArrow('total_expense')}</th>
+    <th data-key="chf_ladestation">Ladestation${sortArrow('chf_ladestation')}</th>
+    <th data-key="net_budgeting">net, Budgeting${sortArrow('net_budgeting')}</th>
   </tr>`;
   const body = rows.map(r => `
     <tr>
@@ -384,7 +460,74 @@ function renderCostsTable(rows){
       <td class="total-col">${r.total!==null ? fmt(r.total,0) : '–'}</td>
     </tr>
   `).join('');
-  document.getElementById('costsTable').innerHTML = head + body;
+  document.getElementById('costsTable').innerHTML =
+    `<thead>${head}</thead><tbody id="costsTbody">${body}</tbody><tfoot id="costsTfoot"></tfoot>`;
+}
+
+function renderTotalsRow(rows){
+  const tfoot = document.getElementById('costsTfoot');
+  if (!tfoot) return;
+  if (!rows || rows.length === 0){ tfoot.innerHTML = ''; return; }
+  const sum = (get) => rows.reduce((s,r) => {
+    const v = get(r);
+    return s + (v === null || v === undefined || isNaN(v) ? 0 : v);
+  }, 0);
+  const consumption = sum(r => r.consumptionOhneLadestation);
+  const ladestationKwh = sum(r => r.m.Ladestation_kWh);
+  const production = sum(r => r.m.Production_kWh);
+  const fromGridKwh = sum(r => r.m.GridFrom_kWh);
+  const toGridKwh = sum(r => r.m.GridTo_kWh);
+  const chfFromGrid = sum(r => r.costFromGrid);
+  const chfToGrid = sum(r => r.costToGrid);
+  const totalExpense = sum(r => r.net);
+  const chfLadestation = sum(r => r.costLadestation);
+  const netBudgeting = sum(r => r.total);
+  tfoot.innerHTML = `
+    <tr class="totals-row">
+      <td>Total (Auswahl, ${rows.length} Mon.)</td>
+      <td>${fmt(consumption,0)}</td>
+      <td>${fmt(ladestationKwh,0)}</td>
+      <td>${fmt(production,0)}</td>
+      <td>${fmt(fromGridKwh,0)}</td>
+      <td>${fmt(toGridKwh,0)}</td>
+      <td>–</td>
+      <td>–</td>
+      <td>–</td>
+      <td>${fmt(chfFromGrid,0)}</td>
+      <td class="${chfToGrid<0?'neg':''}">${fmt(chfToGrid,0)}</td>
+      <td class="${totalExpense<0?'neg':''}">${fmt(totalExpense,0)}</td>
+      <td>${fmt(chfLadestation,0)}</td>
+      <td>${fmt(netBudgeting,0)}</td>
+    </tr>`;
+}
+
+function populateFilterSelects(){
+  const keysAsc = [...new Set(ALL_ROWS.map(r => r.m.key))].sort();
+  const fromSel = document.getElementById('filterFrom');
+  const toSel = document.getElementById('filterTo');
+  const opts = keysAsc.map(k => `<option value="${k}">${monthLabel(k)}</option>`).join('');
+  fromSel.innerHTML = opts;
+  toSel.innerHTML = opts;
+  fromSel.value = keysAsc[0];
+  toSel.value = keysAsc[keysAsc.length - 1];
+}
+
+function applyFilterAndRender(){
+  const fromSel = document.getElementById('filterFrom');
+  const toSel = document.getElementById('filterTo');
+  const fromKey = fromSel.value, toKey = toSel.value;
+  const keysAsc = [...new Set(ALL_ROWS.map(r => r.m.key))].sort();
+  const minKey = keysAsc[0], maxKey = keysAsc[keysAsc.length - 1];
+
+  const filtered = ALL_ROWS.filter(r => r.m.key >= fromKey && r.m.key <= toKey);
+  const sorted = sortRows(filtered);
+  renderCostsTable(sorted);
+
+  const isFiltered = fromKey !== minKey || toKey !== maxKey;
+  renderTotalsRow(isFiltered ? sorted : null);
+
+  CURRENT_ROWS = sorted;
+  document.getElementById('exportBtn').disabled = sorted.length === 0 || typeof XLSX === 'undefined';
 }
 
 function applyData(payload, sourceLabel){
@@ -394,16 +537,14 @@ function applyData(payload, sourceLabel){
     document.getElementById('status').textContent = "Noch keine Daten vorhanden.";
     return;
   }
-  const rows = buildCostRows(monthly, payload.priceRows || []);
+  ALL_ROWS = buildCostRows(monthly, payload.priceRows || []);
   document.getElementById('status').style.display = 'none';
   document.getElementById('content').style.display = 'block';
   document.getElementById('subline').textContent = `${monthly.length} Monate · inkl. Prognose für die nächsten ${FUTURE_MONTHS} Monate`;
   document.getElementById('footerInfo').textContent = `Datenquelle: ${sourceLabel}`;
-  renderCostsTable(rows);
 
-  CURRENT_ROWS = rows;
-  const exportBtn = document.getElementById('exportBtn');
-  exportBtn.disabled = rows.length === 0 || typeof XLSX === 'undefined';
+  populateFilterSelects();
+  applyFilterAndRender();
 }
 
 let CURRENT_ROWS = [];
@@ -429,7 +570,7 @@ function exportToExcel(rows){
     "Monat/Jahr",
     "Consumption*","Ladestation","Production","fromGrid","toGrid",
     "fromGrid","toGrid","fix",
-    "fromGrid","toGrid","net","Ladestation","Total"
+    "fromGrid","toGrid","Total Expense","Ladestation","net, Budgeting"
   ];
   const bodyRows = rows.map(r => ([
     rowLabel(r),
@@ -466,6 +607,31 @@ function round0(n){ return n===null||n===undefined||isNaN(n) ? null : Math.round
 function round(n, d){ return n===null||n===undefined||isNaN(n) ? null : Math.round(n*10**d)/10**d; }
 
 document.getElementById('exportBtn').addEventListener('click', () => exportToExcel(CURRENT_ROWS));
+
+document.getElementById('filterFrom').addEventListener('change', () => {
+  const fromSel = document.getElementById('filterFrom');
+  const toSel = document.getElementById('filterTo');
+  if (fromSel.value > toSel.value) toSel.value = fromSel.value;
+  applyFilterAndRender();
+});
+document.getElementById('filterTo').addEventListener('change', () => {
+  const fromSel = document.getElementById('filterFrom');
+  const toSel = document.getElementById('filterTo');
+  if (toSel.value < fromSel.value) fromSel.value = toSel.value;
+  applyFilterAndRender();
+});
+document.getElementById('filterResetBtn').addEventListener('click', () => {
+  populateFilterSelects();
+  applyFilterAndRender();
+});
+document.getElementById('costsTable').addEventListener('click', (e) => {
+  const th = e.target.closest('th[data-key]');
+  if (!th) return;
+  const key = th.dataset.key;
+  if (SORT_STATE.key === key) SORT_STATE.dir = SORT_STATE.dir === 'asc' ? 'desc' : 'asc';
+  else { SORT_STATE.key = key; SORT_STATE.dir = 'desc'; }
+  applyFilterAndRender();
+});
 
 async function load(){
   const cached = readCache();
