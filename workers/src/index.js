@@ -743,27 +743,65 @@ async function handleCarData(request, env) {
   return jsonResponse({ points, deviceRows, allRows, deviceLabel, resolvedDeviceId });
 }
 
+// Liefert {startUtc, endUtc} fuer den Zurich-Kalendertag `dateStr` ('YYYY-MM-DD')
+function zurichDayRangeUtc(dateStr) {
+  const approx = new Date(dateStr + "T00:00:00Z");
+  const utc = new Date(approx.toLocaleString("en-US", { timeZone: "UTC" }));
+  const zur = new Date(approx.toLocaleString("en-US", { timeZone: "Europe/Zurich" }));
+  const offsetMin = (zur - utc) / 60000;
+  const startUtc = new Date(approx.getTime() - offsetMin * 60000);
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  return { startUtc, endUtc };
+}
+
 async function handleLiveData(request, env) {
   const db = env.DB;
+  const url = new URL(request.url);
+  const dateParam = url.searchParams.get("date"); // optional 'YYYY-MM-DD', Zurich-Kalendertag
   const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+  const targetDate = (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) ? dateParam : todayIso;
+  const isToday = targetDate === todayIso;
 
-  const [pointsRes, deviceReadingsRes, deviceNamesRes, todayRow] = await Promise.all([
-    db.prepare(`
+  let pointsStmt, devicesStmt;
+  if (isToday) {
+    // Rollierendes 24h-Fenster bis jetzt (Live-Betrieb)
+    pointsStmt = db.prepare(`
       SELECT fetched_at, current_pv_generation, current_power_consumption,
              current_grid_power, current_battery_charge_discharge
       FROM solarmanager_live_points
       WHERE datetime(fetched_at) >= datetime('now', '-24 hours')
-      ORDER BY fetched_at`).all(),
-    db.prepare(`
+      ORDER BY fetched_at`);
+    devicesStmt = db.prepare(`
       SELECT fetched_at, device_id, current_power
       FROM solarmanager_live_devices
       WHERE datetime(fetched_at) >= datetime('now', '-24 hours')
-      ORDER BY fetched_at`).all(),
+      ORDER BY fetched_at`);
+  } else {
+    // Fester Zurich-Kalendertag (historische Ansicht ueber den Date-Selector)
+    const { startUtc, endUtc } = zurichDayRangeUtc(targetDate);
+    const startIso = startUtc.toISOString().replace(/\.\d{3}Z$/, "");
+    const endIso = endUtc.toISOString().replace(/\.\d{3}Z$/, "");
+    pointsStmt = db.prepare(`
+      SELECT fetched_at, current_pv_generation, current_power_consumption,
+             current_grid_power, current_battery_charge_discharge
+      FROM solarmanager_live_points
+      WHERE datetime(fetched_at) >= datetime(?) AND datetime(fetched_at) < datetime(?)
+      ORDER BY fetched_at`).bind(startIso, endIso);
+    devicesStmt = db.prepare(`
+      SELECT fetched_at, device_id, current_power
+      FROM solarmanager_live_devices
+      WHERE datetime(fetched_at) >= datetime(?) AND datetime(fetched_at) < datetime(?)
+      ORDER BY fetched_at`).bind(startIso, endIso);
+  }
+
+  const [pointsRes, deviceReadingsRes, deviceNamesRes, dayRow] = await Promise.all([
+    pointsStmt.all(),
+    devicesStmt.all(),
     db.prepare("SELECT device_id, Bezeichnung FROM solarmanager_devices").all(),
     db.prepare(`
       SELECT Consumption_kWh, Production_kWh, GridFrom_kWh, GridTo_kWh,
              Entfeuchter_Waschen_kWh, Wasserpumpe_kWh, Ladestation_kWh
-      FROM solarmanager_data WHERE Date_ISO = ?`).bind(todayIso).first(),
+      FROM solarmanager_data WHERE Date_ISO = ?`).bind(targetDate).first(),
   ]);
 
   const points = (pointsRes.results || []).map((p) => ({
@@ -785,17 +823,22 @@ async function handleLiveData(request, env) {
     deviceNames[d.device_id] = (d.Bezeichnung || d.device_id || "").replace(/_Wh$/, "").replace(/_/g, " ");
   });
 
-  const dayTotals = todayRow ? {
-    consumption: Number(todayRow.Consumption_kWh) || 0,
-    production: Number(todayRow.Production_kWh) || 0,
-    gridFrom: Number(todayRow.GridFrom_kWh) || 0,
-    gridTo: Number(todayRow.GridTo_kWh) || 0,
-    Entfeuchter: Number(todayRow.Entfeuchter_Waschen_kWh) || 0,
-    Wasserpumpe: Number(todayRow.Wasserpumpe_kWh) || 0,
-    Ladestation: Number(todayRow.Ladestation_kWh) || 0,
+  // Achtung: der Tages-Aggregatzeile fuer "heute" existiert erst ab 01:00 UTC
+  // des Folgetages (Pipeline rechnet nur abgeschlossene Tage). Fuer heute
+  // bleibt dayTotals daher i.d.R. null; das Frontend rechnet in diesem Fall
+  // selbst aus den Live-Punkten hoch. Fuer historische Tage ist die Zeile
+  // bereits vorhanden und massgeblich.
+  const dayTotals = dayRow ? {
+    consumption: Number(dayRow.Consumption_kWh) || 0,
+    production: Number(dayRow.Production_kWh) || 0,
+    gridFrom: Number(dayRow.GridFrom_kWh) || 0,
+    gridTo: Number(dayRow.GridTo_kWh) || 0,
+    Entfeuchter: Number(dayRow.Entfeuchter_Waschen_kWh) || 0,
+    Wasserpumpe: Number(dayRow.Wasserpumpe_kWh) || 0,
+    Ladestation: Number(dayRow.Ladestation_kWh) || 0,
   } : null;
 
-  return jsonResponse({ points, deviceReadings, deviceNames, dayTotals });
+  return jsonResponse({ points, deviceReadings, deviceNames, dayTotals, date: targetDate, isToday });
 }
 
 /* ---------------------------------------------------------------------- *
