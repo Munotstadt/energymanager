@@ -209,14 +209,66 @@ async function handleTargetSocSet(request, env) {
 }
 
 /* ---------------------------------------------------------------------- *
- * Geplanter Lademodus-Wechsel (car.html: "Wechsel zu Zeitpunkt X")
+ * Geplanter Lademodus-Wechsel (car.html: "Wechsel zu Zeitpunkt X" /
+ * "jeden <Wochentag>")
  * ---------------------------------------------------------------------- */
+
+// JS-Wochentag-Konvention: 0=Sonntag, 1=Montag, ..., 6=Samstag (Europe/Zurich).
+
+function zurichDatePartsAt(dateUtc) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Zurich', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(dateUtc).map((p) => [p.type, p.value])
+  );
+  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day) };
+}
+
+function zurichLocalToUtcDate(y, m, d, hh, mm) {
+  const naive = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+  const offset = zurichOffsetMinutesAt(naive); // Minuten, die Zuerich der UTC voraus ist
+  return new Date(naive.getTime() - offset * 60000);
+}
+
+function zurichOffsetMinutesAt(dateUtc) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Zurich', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(dateUtc).map((p) => [p.type, p.value])
+  );
+  const asUTC = Date.UTC(
+    parts.year, parts.month - 1, parts.day,
+    parts.hour === '24' ? 0 : parts.hour, parts.minute, parts.second
+  );
+  return (asUTC - dateUtc.getTime()) / 60000;
+}
+
+// Naechstes Vorkommen von Wochentag/Uhrzeit (Zuerich-Lokalzeit) NACH afterUtcMillis.
+function nextWeeklyOccurrenceUtc(weekday, hh, mm, afterUtcMillis) {
+  const { y, m, d } = zurichDatePartsAt(new Date(afterUtcMillis));
+  for (let i = 0; i < 8; i++) {
+    const candidateDay = new Date(Date.UTC(y, m - 1, d + i));
+    if (candidateDay.getUTCDay() !== weekday) continue;
+    const cand = zurichLocalToUtcDate(
+      candidateDay.getUTCFullYear(), candidateDay.getUTCMonth() + 1, candidateDay.getUTCDate(),
+      hh, mm
+    );
+    if (cand.getTime() > afterUtcMillis) return cand;
+  }
+  return null; // sollte bei i<8 nie eintreten
+}
+
+const WEEKDAY_LABELS_DE = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
 async function handleScheduleGet(request, env) {
   const row = await env.DB
     .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc,
                      scheduled_constant_current, scheduled_note, scheduled_status,
-                     scheduled_executed_at
+                     scheduled_executed_at, scheduled_repeat, scheduled_weekday,
+                     scheduled_time_local
               FROM car_charging_config WHERE id = 1`)
     .first();
   if (!row) return jsonResponse({ scheduled_status: null });
@@ -225,28 +277,43 @@ async function handleScheduleGet(request, env) {
 
 async function handleScheduleSet(request, env) {
   const body = await request.json();
-  const scheduledAtUtc = body.scheduled_at_utc;
+  const repeat = body.repeat === "weekly" ? "weekly" : "once";
   const mode = Number(body.target_mode);
   const note = (body.note || "").toString().slice(0, 500);
 
-  if (!scheduledAtUtc || isNaN(Date.parse(scheduledAtUtc))) {
-    return jsonResponse({ error: "scheduled_at_utc (gültiges ISO-Datum) erforderlich" }, 400);
-  }
   if (!Number.isFinite(mode) || mode < 0 || mode > 8) {
     return jsonResponse({ error: "target_mode (0-8) erforderlich" }, 400);
   }
-  if (Date.parse(scheduledAtUtc) <= Date.now()) {
-    return jsonResponse({ error: "Zeitpunkt liegt in der Vergangenheit" }, 400);
-  }
-
   const targetSoc = mode === 7 && body.target_soc ? Math.round(Number(body.target_soc)) : null;
   const constCurrent = mode === 4 && body.constant_current ? Math.round(Number(body.constant_current)) : null;
+
+  let scheduledAtUtc, weekday = null, timeLocal = null;
+
+  if (repeat === "weekly") {
+    weekday = Number(body.weekday);
+    timeLocal = (body.time_local || "").toString(); // "HH:MM"
+    const m = /^(\d{1,2}):(\d{2})$/.exec(timeLocal);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !m) {
+      return jsonResponse({ error: "weekday (0-6) und time_local (HH:MM) erforderlich" }, 400);
+    }
+    const next = nextWeeklyOccurrenceUtc(weekday, Number(m[1]), Number(m[2]), Date.now());
+    scheduledAtUtc = next.toISOString();
+  } else {
+    scheduledAtUtc = body.scheduled_at_utc;
+    if (!scheduledAtUtc || isNaN(Date.parse(scheduledAtUtc))) {
+      return jsonResponse({ error: "scheduled_at_utc (gültiges ISO-Datum) erforderlich" }, 400);
+    }
+    if (Date.parse(scheduledAtUtc) <= Date.now()) {
+      return jsonResponse({ error: "Zeitpunkt liegt in der Vergangenheit" }, 400);
+    }
+  }
 
   await env.DB.prepare(`
     INSERT INTO car_charging_config
       (id, scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current,
-       scheduled_note, scheduled_status, scheduled_executed_at, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+       scheduled_note, scheduled_status, scheduled_executed_at, scheduled_repeat,
+       scheduled_weekday, scheduled_time_local, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       scheduled_at_utc=excluded.scheduled_at_utc,
       scheduled_mode=excluded.scheduled_mode,
@@ -255,17 +322,23 @@ async function handleScheduleSet(request, env) {
       scheduled_note=excluded.scheduled_note,
       scheduled_status=excluded.scheduled_status,
       scheduled_executed_at=excluded.scheduled_executed_at,
+      scheduled_repeat=excluded.scheduled_repeat,
+      scheduled_weekday=excluded.scheduled_weekday,
+      scheduled_time_local=excluded.scheduled_time_local,
       updated_at=excluded.updated_at`)
-    .bind(scheduledAtUtc, mode, targetSoc, constCurrent, note, nowZurich())
+    .bind(scheduledAtUtc, mode, targetSoc, constCurrent, note, repeat, weekday, timeLocal, nowZurich())
     .run();
 
+  const desc = repeat === "weekly"
+    ? `jeden ${WEEKDAY_LABELS_DE[weekday]} ${timeLocal}`
+    : scheduledAtUtc;
   await logActivity(
     env.DB,
-    `Geplanter Wechsel angelegt: ${scheduledAtUtc} -> ${modeLabel(mode)}${note ? ` (${note})` : ""}`,
+    `Geplanter Wechsel angelegt (${repeat === "weekly" ? "wöchentlich" : "einmalig"}): ${desc} -> ${modeLabel(mode)}${note ? ` (${note})` : ""}`,
     "energymanager & Zeitplan"
   );
 
-  return jsonResponse({ ok: true });
+  return jsonResponse({ ok: true, scheduled_at_utc: scheduledAtUtc });
 }
 
 async function handleScheduleCancel(request, env) {
@@ -281,7 +354,8 @@ async function handleScheduleCancel(request, env) {
 async function runScheduledModeSwitch(env) {
   const db = env.DB;
   const row = await db
-    .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current
+    .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current,
+                     scheduled_repeat, scheduled_weekday, scheduled_time_local
               FROM car_charging_config WHERE id = 1 AND scheduled_status = 'pending'`)
     .first();
   if (!row || !row.scheduled_at_utc) return;
@@ -303,12 +377,28 @@ async function runScheduledModeSwitch(env) {
   const oldMode = await currentMode(db, deviceId);
   try {
     await setChargerMode(env, deviceId, Number(row.scheduled_mode), extra);
-    await db.prepare(`
-      UPDATE car_charging_config
-      SET scheduled_status = 'executed', scheduled_executed_at = ?, updated_at = ?
-      WHERE id = 1`)
-      .bind(nowZurich(), nowZurich())
-      .run();
+
+    if (row.scheduled_repeat === "weekly" && row.scheduled_time_local) {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(row.scheduled_time_local);
+      const nextUtc = m
+        ? nextWeeklyOccurrenceUtc(Number(row.scheduled_weekday), Number(m[1]), Number(m[2]),
+            Date.parse(row.scheduled_at_utc) + 60000)
+        : null;
+      await db.prepare(`
+        UPDATE car_charging_config
+        SET scheduled_at_utc = ?, scheduled_status = 'pending', scheduled_executed_at = ?, updated_at = ?
+        WHERE id = 1`)
+        .bind(nextUtc ? nextUtc.toISOString() : row.scheduled_at_utc, nowZurich(), nowZurich())
+        .run();
+    } else {
+      await db.prepare(`
+        UPDATE car_charging_config
+        SET scheduled_status = 'executed', scheduled_executed_at = ?, updated_at = ?
+        WHERE id = 1`)
+        .bind(nowZurich(), nowZurich())
+        .run();
+    }
+
     await logActivity(
       db,
       `Geplanter Wechsel ausgefuehrt: ${modeLabel(oldMode)} -> ${modeLabel(Number(row.scheduled_mode))}`,
