@@ -84,14 +84,42 @@
   }
   .kpi.pv{border-left-color:var(--yellow);}
   .kpi.cons{border-left-color:var(--accent);}
-  .kpi.grid-from{border-left-color:var(--amber);}
-  .kpi.grid-to{border-left-color:var(--blue);}
+  .kpi.grid-from{border-left-color:var(--green);}
+  .kpi.grid-to{border-left-color:var(--green);}
   .kpi.batt{border-left-color:var(--purple);}
   .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
   .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.35rem; font-weight:600; margin-top:4px;}
   .kpi .value small{font-size:0.7rem; color:var(--text-dim); font-weight:400;}
   .kpi .delta{font-size:0.72rem; margin-top:3px; color:var(--text-dim);}
   .kpi .daytotal{font-size:0.68rem; margin-top:2px; color:var(--text-dim2);}
+  .kpi .today-sub{
+    font-family:'IBM Plex Mono',monospace; font-size:0.74rem; color:var(--text-dim);
+    margin-top:3px; padding-top:5px; border-top:1px solid var(--grey-100);
+  }
+  .kpi .today-sub b{color:var(--text); font-weight:600;}
+
+  .date-picker{display:flex; align-items:center; gap:8px; font-size:0.85rem;}
+  .date-picker label{color:var(--text-dim); font-size:0.78rem;}
+  .date-picker input[type="date"]{
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:5px 8px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); color:var(--ink); background:#fff;
+  }
+  .date-picker button{
+    font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:500; padding:6px 12px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+    cursor:pointer;
+  }
+  .date-picker button:hover{background:var(--grey-100);}
+
+  .chart-tooltip{
+    position:fixed; z-index:50; background:var(--ink); color:#fff; font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem; padding:8px 10px; border-radius:var(--radius); pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.25); display:none; line-height:1.5; white-space:nowrap;
+  }
+  .chart-tooltip .tt-time{color:#bbb; font-size:0.68rem; margin-bottom:3px;}
+  .chart-tooltip .tt-row{display:flex; align-items:center; gap:6px;}
+  .chart-tooltip .tt-sw{width:8px; height:8px; border-radius:2px; display:inline-block; flex-shrink:0;}
+  svg.linechart{cursor:crosshair;}
 
   .card{
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
@@ -132,32 +160,36 @@
   </div>
 </header>
 <div class="wrap">
-  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div>
-      <h1>Live</h1>
+      <h1>Aktuell &amp; Heute</h1>
       <div class="sub"><span class="live-dot" id="liveDot"></span><span id="subline">Lade Live-Daten...</span></div>
     </div>
-    <button class="refresh-btn" id="refreshBtn" onclick="triggerCollectorAndReload()">&#8635; Aktualisieren</button>
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <div class="date-picker">
+        <label for="dayInput">Zeitraum (Charts)</label>
+        <input type="date" id="dayInput">
+        <button type="button" id="todayBtn">Heute</button>
+      </div>
+      <button class="refresh-btn" id="refreshBtn" onclick="triggerCollectorAndReload()">&#8635; Aktualisieren</button>
+    </div>
   </div>
   <div id="status">Lade Live-Daten...</div>
   <div id="content" style="display:none;">
 
-    <h2>Aktuell</h2>
+    <h2>Aktuell &amp; Heute <span class="hint">gross = live &middot; klein = heute kumuliert</span></h2>
     <div class="kpi-grid" id="kpiGridNow"></div>
-
-    <h2>Heute <span class="hint">geschätzt, bis jetzt &middot; aus Live-Daten hochgerechnet</span></h2>
-    <div class="kpi-grid today-est" id="kpiGridToday"></div>
 
     <h2>Geräte <span class="hint">aktuell (W) &middot; heute (kWh)</span></h2>
     <div class="kpi-grid device-grid" id="kpiGridDevices"></div>
 
-    <h2>Produktion &amp; Verbrauch <span class="hint">letzte 24 Stunden</span></h2>
+    <h2>Produktion &amp; Verbrauch <span class="hint" id="hintMain">letzte 24 Stunden</span></h2>
     <div class="card">
       <div class="legend" id="legendMain"></div>
       <div id="chartMain"></div>
     </div>
 
-    <h2>Geräte <span class="hint">letzte 24 Stunden, aktuelle Leistung</span></h2>
+    <h2>Geräte <span class="hint" id="hintDevices">letzte 24 Stunden, aktuelle Leistung</span></h2>
     <div class="card">
       <div class="legend" id="legendDevices"></div>
       <div id="chartDevices"></div>
@@ -166,6 +198,7 @@
   </div>
   <div class="footer" id="footerInfo"></div>
 </div>
+<div class="chart-tooltip" id="chartTooltip"></div>
 
 <script>
 // ---------- Cloudflare Worker API (D1) ----------
@@ -199,8 +232,13 @@ function toLocalDate(iso){
   return new Date(iso.endsWith('Z') ? iso : iso + 'Z');
 }
 
-async function fetchFromApi(){
-  const res = await fetch(API_URL, {cache:"no-store", credentials:"include"});
+function zurichTodayStr(){
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Europe/Zurich', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+}
+
+async function fetchFromApi(dateStr){
+  const url = dateStr ? `${API_URL}?date=${encodeURIComponent(dateStr)}` : API_URL;
+  const res = await fetch(url, {cache:"no-store", credentials:"include"});
   if (!res.ok) throw new Error(`API HTTP ${res.status}`);
   const payload = await res.json();
 
@@ -210,6 +248,8 @@ async function fetchFromApi(){
       .filter(d => !EXCLUDED_DEVICE_IDS.has((d.device_id || '').toLowerCase())),
     deviceNames: payload.deviceNames || {},
     dayTotals: payload.dayTotals || null,
+    date: payload.date || dateStr || zurichTodayStr(),
+    isToday: payload.isToday !== undefined ? payload.isToday : true,
   };
 }
 
@@ -221,16 +261,20 @@ function renderLineChart(containerId, series, opts={}){
   const padL = 42, padR = 10, padT = 12, padB = 24;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
-  let allTimes = [], allVals = [];
+  let allVals = [];
   series.forEach(s => s.points.forEach(p => {
-    if (p.t !== null && p.t !== undefined) allTimes.push(p.t);
     if (p.v !== null && p.v !== undefined && !isNaN(p.v)) allVals.push(p.v);
   }));
-  if (allTimes.length === 0){
-    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Noch keine Live-Daten in diesem Zeitraum.</div>`;
+
+  // Festes Fenster (windowStart bis windowEnd), damit Luecken sichtbar bleiben
+  // und beide Charts (Haupt/Geraete) exakt denselben Zeitraum zeigen.
+  const tMax = opts.windowEnd !== undefined ? opts.windowEnd : Date.now();
+  const tMin = opts.windowStart !== undefined ? opts.windowStart : tMax - 24 * 60 * 60 * 1000;
+
+  if (allVals.length === 0){
+    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Live-Daten in diesem Zeitraum.</div>`;
     return;
   }
-  const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
   let vMin = Math.min(0, ...allVals), vMax = Math.max(...allVals);
   if (vMax === vMin){ vMax += 1; }
   const vPad = (vMax - vMin) * 0.08;
@@ -261,17 +305,76 @@ function renderLineChart(containerId, series, opts={}){
   }
 
   let paths = '';
+  let markers = '';
+  const allPointTimes = new Set();
   series.forEach(s => {
-    const pts = s.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v));
+    const pts = s.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v) && p.t >= tMin && p.t <= tMax);
     if (pts.length === 0) return;
     const d = pts.map((p,i) => `${i===0 ? 'M' : 'L'} ${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ');
     paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    pts.forEach(p => {
+      allPointTimes.add(p.t);
+      markers += `<circle class="pt-hit" cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="9" fill="transparent" data-t="${p.t}"/>`;
+      markers += `<circle cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5" fill="${s.color}" pointer-events="none"/>`;
+    });
   });
 
-  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
-    ${gridSvg}${xLabels}${paths}
+  el.innerHTML = `<svg class="linechart" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${xLabels}${paths}${markers}
   </svg>`;
+
+  // Klick: naechsten Datenpunkt (ueber alle Serien) finden und Tooltip anzeigen.
+  const svgEl = el.querySelector('svg');
+  const tooltip = document.getElementById('chartTooltip');
+  const sortedTimes = Array.from(allPointTimes).sort((a,b) => a-b);
+
+  function nearestTime(clientX){
+    if (sortedTimes.length === 0) return null;
+    const rect = svgEl.getBoundingClientRect();
+    const scale = w / rect.width;
+    const svgX = (clientX - rect.left) * scale;
+    const clickT = tMin + (svgX - padL) / plotW * (tMax - tMin);
+    let best = sortedTimes[0], bestDiff = Math.abs(sortedTimes[0] - clickT);
+    for (const t of sortedTimes){
+      const diff = Math.abs(t - clickT);
+      if (diff < bestDiff){ best = t; bestDiff = diff; }
+    }
+    return best;
+  }
+
+  function showTooltip(clientX, clientY, t){
+    const rows = series.map(s => {
+      const pt = s.points.find(p => p.t === t);
+      if (!pt || pt.v === null || pt.v === undefined || isNaN(pt.v)) return null;
+      return `<div class="tt-row"><span class="tt-sw" style="background:${s.color}"></span>${s.label}: <b style="margin-left:auto">${fmt(pt.v)} W</b></div>`;
+    }).filter(Boolean);
+    if (rows.length === 0) return;
+    tooltip.innerHTML = `<div class="tt-time">${fmtTime(new Date(t).toISOString())} Uhr</div>${rows.join('')}`;
+    tooltip.style.display = 'block';
+    const ttW = tooltip.offsetWidth || 160;
+    let left = clientX + 12, top = clientY - 10;
+    if (left + ttW > window.innerWidth - 8) left = clientX - ttW - 12;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = Math.max(8, top) + 'px';
+  }
+
+  svgEl.addEventListener('click', (ev) => {
+    const t = nearestTime(ev.clientX);
+    if (t === null) return;
+    if (tooltip.style.display === 'block' && tooltip.dataset.t === String(t)){
+      tooltip.style.display = 'none';
+      return;
+    }
+    tooltip.dataset.t = String(t);
+    showTooltip(ev.clientX, ev.clientY, t);
+    ev.stopPropagation();
+  });
 }
+
+document.addEventListener('click', () => {
+  const tt = document.getElementById('chartTooltip');
+  if (tt) tt.style.display = 'none';
+});
 
 function renderLegend(containerId, series){
   document.getElementById(containerId).innerHTML = series.map(s =>
@@ -308,24 +411,18 @@ function renderKpiGroup(containerId, cards){
   `).join('');
 }
 
-function renderNowKpis(latestPoint){
+// Kombinierte Kacheln: gross = aktueller Live-Wert (W), klein = Heute kumuliert (kWh).
+// today ist entweder das Trapez-Estimate (heute, live) oder dayTotals (historischer Tag, exakt).
+function renderNowAndTodayKpis(latestPoint, today){
   const grid = latestPoint ? latestPoint.grid : null;
   const gridFromW = grid !== null && grid > 0 ? grid : 0;
   const gridToW = grid !== null && grid < 0 ? -grid : 0;
+  const sub = (kwh) => `<div class="today-sub">Heute: <b>${fmt(kwh, 1)}</b> kWh</div>`;
   renderKpiGroup('kpiGridNow', [
-    {cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–'},
-    {cls:'pv', label:'Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–'},
-    {cls:'grid-from', label:'Netzbezug', value: latestPoint ? `${fmt(gridFromW)} <small>W</small>` : '–'},
-    {cls:'grid-to', label:'Einspeisung', value: latestPoint ? `${fmt(gridToW)} <small>W</small>` : '–'},
-  ]);
-}
-
-function renderTodayKpis(est){
-  renderKpiGroup('kpiGridToday', [
-    {cls:'cons', label:'Verbrauch', value:`${fmt(est.consumption_kwh, 1)} <small>kWh</small>`},
-    {cls:'pv', label:'Produktion', value:`${fmt(est.production_kwh, 1)} <small>kWh</small>`},
-    {cls:'grid-from', label:'Netzbezug', value:`${fmt(est.gridFrom_kwh, 1)} <small>kWh</small>`},
-    {cls:'grid-to', label:'Einspeisung', value:`${fmt(est.gridTo_kwh, 1)} <small>kWh</small>`},
+    {cls:'cons', label:'Verbrauch', value: latestPoint ? `${fmt(latestPoint.consumption)} <small>W</small>` : '–', sub: sub(today.consumption_kwh)},
+    {cls:'pv', label:'Produktion', value: latestPoint ? `${fmt(latestPoint.pv)} <small>W</small>` : '–', sub: sub(today.production_kwh)},
+    {cls:'grid-from', label:'Netzbezug', value: latestPoint ? `${fmt(gridFromW)} <small>W</small>` : '–', sub: sub(today.gridFrom_kwh)},
+    {cls:'grid-to', label:'Einspeisung', value: latestPoint ? `${fmt(gridToW)} <small>W</small>` : '–', sub: sub(today.gridTo_kwh)},
   ]);
 }
 
@@ -438,20 +535,45 @@ async function triggerCollectorAndReload(){
   }
 }
 
+let selectedDate = zurichTodayStr(); // 'YYYY-MM-DD', Europe/Zurich
+
+// Client-seitige Zurich-Tagesgrenzen (fuer die Chart-Fensterberechnung; die
+// eigentliche Datenfilterung macht der Worker serverseitig via ?date=).
+function zurichDayRangeUtc(dateStr){
+  const approx = new Date(dateStr + 'T00:00:00Z');
+  const utc = new Date(approx.toLocaleString('en-US', {timeZone:'UTC'}));
+  const zur = new Date(approx.toLocaleString('en-US', {timeZone:'Europe/Zurich'}));
+  const offsetMin = (zur - utc) / 60000;
+  const startUtc = new Date(approx.getTime() - offsetMin * 60000);
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  return { startUtc, endUtc };
+}
+
 async function load(){
+  const isToday = (selectedDate === zurichTodayStr());
   try{
-    const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromApi();
+    const { points, deviceReadings, deviceNames, dayTotals } = await fetchFromApi(isToday ? undefined : selectedDate);
 
     document.getElementById('status').style.display = 'none';
     document.getElementById('content').style.display = 'block';
-    document.getElementById('liveDot').classList.remove('stale');
+    document.getElementById('liveDot').classList.toggle('stale', !isToday);
 
-    const latestPoint = points.length ? points[points.length-1] : null;
-    const nowStr = new Date().toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    document.getElementById('subline').textContent = latestPoint
-      ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
-      : `Keine Live-Daten in den letzten 12h · aktualisiert ${nowStr}`;
-    document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api (live) · Aktualisierung alle ${REFRESH_MS/60000} Min (Cloudflare Worker Cron)`;
+    const latestPoint = isToday && points.length ? points[points.length-1] : null;
+    const dayLabel = new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-CH', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' });
+
+    if (isToday){
+      const nowStr = new Date().toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      document.getElementById('subline').textContent = latestPoint
+        ? `Letzter Datenpunkt: ${fmtTime(latestPoint.fetched_at)} Uhr · aktualisiert ${nowStr}`
+        : `Keine Live-Daten in den letzten 24h · aktualisiert ${nowStr}`;
+      document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api (live) · Aktualisierung alle ${REFRESH_MS/60000} Min (Cloudflare Worker Cron)`;
+    } else {
+      document.getElementById('subline').textContent = `${dayLabel} · historische Ansicht, keine automatische Aktualisierung`;
+      document.getElementById('footerInfo').textContent = `Datenquelle: energymanager-api · Tageswerte aus Tagesaggregation`;
+    }
+    const rangeHint = isToday ? 'letzte 24 Stunden' : dayLabel;
+    document.getElementById('hintMain').textContent = rangeHint;
+    document.getElementById('hintDevices').textContent = isToday ? `${rangeHint}, aktuelle Leistung` : `${dayLabel}, Leistung`;
 
     // Geraete (ohne Haupt-Messgeraete PV/Verbrauch): neuesten Wert je Kategorie
     // ermitteln + pro Geraet Zeitreihe fuer den Chart bauen
@@ -470,18 +592,50 @@ async function load(){
       if (category === 'others'){
         othersHasData = true;
         latestByCategory.others += (last.power || 0);
-      } else {
+      } else if (isToday) {
         latestByCategory[category] = last.power;
       }
     });
-    if (!othersHasData) latestByCategory.others = null;
+    if (!othersHasData || !isToday) latestByCategory.others = isToday ? null : null;
 
-    const todayEst = renderTodayEstimate(points);
-    const todayKwhByCategory = estimateTodayPerDeviceCategory(deviceReadings, deviceNames);
+    // "Heute"-Werte: bei heute aus Live-Punkten hochgerechnet (dayTotals fuer
+    // heute existiert i.d.R. noch nicht), bei historischem Tag aus der exakten
+    // Tagesaggregation (dayTotals) vom Worker.
+    let today, todayKwhByCategory;
+    if (isToday){
+      today = renderTodayEstimate(points);
+      todayKwhByCategory = estimateTodayPerDeviceCategory(deviceReadings, deviceNames);
+    } else if (dayTotals){
+      today = {
+        consumption_kwh: dayTotals.consumption,
+        production_kwh: dayTotals.production,
+        gridFrom_kwh: dayTotals.gridFrom,
+        gridTo_kwh: dayTotals.gridTo,
+      };
+      todayKwhByCategory = {
+        ladestation: dayTotals.Ladestation || 0,
+        entfeuchter: dayTotals.Entfeuchter || 0,
+        wasserpumpe: dayTotals.Wasserpumpe || 0,
+        others: 0,
+      };
+    } else {
+      today = { consumption_kwh:0, production_kwh:0, gridFrom_kwh:0, gridTo_kwh:0 };
+      todayKwhByCategory = { ladestation:0, entfeuchter:0, wasserpumpe:0, others:0 };
+    }
 
-    renderNowKpis(latestPoint);
-    renderTodayKpis(todayEst);
+    renderNowAndTodayKpis(latestPoint, today);
     renderDeviceKpis(latestByCategory, todayKwhByCategory);
+
+    // Festes Chart-Fenster: heute = rollierende 24h bis jetzt, historisch = Zurich-Kalendertag
+    let windowStart, windowEnd;
+    if (isToday){
+      windowEnd = Date.now();
+      windowStart = windowEnd - 24 * 60 * 60 * 1000;
+    } else {
+      const { startUtc, endUtc } = zurichDayRangeUtc(selectedDate);
+      windowStart = startUtc.getTime();
+      windowEnd = endUtc.getTime();
+    }
 
     // Hauptchart: Produktion / Verbrauch / Netzbezug
     const mainSeries = [
@@ -490,7 +644,7 @@ async function load(){
       { label:'Netz (+Bezug/-Einspeisung)', color:'#1f9d55', points: points.map(p => ({ t: toLocalDate(p.fetched_at).getTime(), v: p.grid })) },
     ];
     renderLegend('legendMain', mainSeries);
-    renderLineChart('chartMain', mainSeries, { height: 240 });
+    renderLineChart('chartMain', mainSeries, { height: 240, windowStart, windowEnd });
 
     // Geraete-Chart
     const deviceSeries = Object.entries(byDevice).map(([name, arr], i) => ({
@@ -499,26 +653,45 @@ async function load(){
       points: arr.map(r => ({ t: toLocalDate(r.fetched_at).getTime(), v: r.power }))
     }));
     renderLegend('legendDevices', deviceSeries);
-    renderLineChart('chartDevices', deviceSeries, { height: 240 });
+    renderLineChart('chartDevices', deviceSeries, { height: 240, windowStart, windowEnd });
 
   } catch(e){
     console.warn("API-Zugriff fehlgeschlagen:", e);
-    document.getElementById('liveDot').classList.add('stale');
+    if (isToday) document.getElementById('liveDot').classList.add('stale');
     if (document.getElementById('content').style.display === 'none'){
       document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
     } else {
-      document.getElementById('subline').textContent = `Live-Update fehlgeschlagen (${e.message}) · zeige letzten Stand`;
+      document.getElementById('subline').textContent = `Update fehlgeschlagen (${e.message}) · zeige letzten Stand`;
     }
   }
 }
 
 function scheduleRefresh(){
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(load, REFRESH_MS);
+  refreshTimer = setInterval(() => {
+    if (selectedDate === zurichTodayStr()) load();
+  }, REFRESH_MS);
 }
 
 window.addEventListener('resize', () => {
   // Charts bei Groessenaenderung neu zeichnen (einfachste Loesung: neu laden aus letztem Stand vermeiden -> nur bei Bedarf)
+});
+
+const dayInput = document.getElementById('dayInput');
+dayInput.max = zurichTodayStr();
+dayInput.value = selectedDate;
+dayInput.addEventListener('change', () => {
+  if (!dayInput.value) return;
+  selectedDate = dayInput.value;
+  document.getElementById('status').textContent = "Lade Daten...";
+  document.getElementById('status').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+  load();
+});
+document.getElementById('todayBtn').addEventListener('click', () => {
+  selectedDate = zurichTodayStr();
+  dayInput.value = selectedDate;
+  load();
 });
 
 load();
