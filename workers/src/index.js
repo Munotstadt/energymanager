@@ -896,7 +896,9 @@ export default {
       for (const [k, v] of Object.entries(cors)) resp.headers.set(k, v);
       return resp;
     } catch (e) {
-      return jsonResponse({ error: String(e) }, 500);
+      const resp = jsonResponse({ error: String(e) }, 500);
+      for (const [k, v] of Object.entries(cors)) resp.headers.set(k, v);
+      return resp;
     }
   },
 };
