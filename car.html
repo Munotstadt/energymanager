@@ -231,9 +231,34 @@
       <div class="card">
         <div class="row">
           <div class="field">
+            <label for="scheduleRepeatSelect">Häufigkeit</label>
+            <select id="scheduleRepeatSelect" onchange="onScheduleRepeatChange()">
+              <option value="once">Einmalig</option>
+              <option value="weekly">Wöchentlich</option>
+            </select>
+          </div>
+          <div class="field" id="fieldScheduleOnce">
             <label for="scheduleAtInput">Zeitpunkt (Zürich)</label>
             <input id="scheduleAtInput" type="datetime-local">
           </div>
+          <div class="field narrow" id="fieldScheduleWeekday" style="display:none;">
+            <label for="scheduleWeekdaySelect">Jeden</label>
+            <select id="scheduleWeekdaySelect">
+              <option value="1">Montag</option>
+              <option value="2">Dienstag</option>
+              <option value="3">Mittwoch</option>
+              <option value="4" selected>Donnerstag</option>
+              <option value="5">Freitag</option>
+              <option value="6">Samstag</option>
+              <option value="0">Sonntag</option>
+            </select>
+          </div>
+          <div class="field narrow" id="fieldScheduleTime" style="display:none;">
+            <label for="scheduleTimeInput">Uhrzeit (Zürich)</label>
+            <input id="scheduleTimeInput" type="time" value="12:30">
+          </div>
+        </div>
+        <div class="row">
           <div class="field">
             <label for="scheduleModeSelect">Neuer Modus</label>
             <select id="scheduleModeSelect" onchange="onScheduleModeChange()">
@@ -267,7 +292,7 @@
         </div>
         <div id="scheduleStatus" class="status-msg"></div>
         <div id="scheduleCurrent" class="hint-txt"></div>
-        <div class="hint-txt">Die Prüfung läuft im 15-Minuten-Takt (gleicher Cron wie die Automatik) — der Wechsel erfolgt also bis zu 15&nbsp;Minuten nach dem gewählten Zeitpunkt, nicht auf die Sekunde genau.</div>
+        <div class="hint-txt">Die Prüfung läuft im 15-Minuten-Takt (gleicher Cron wie die Automatik) — der Wechsel erfolgt also bis zu 15&nbsp;Minuten nach dem gewählten Zeitpunkt, nicht auf die Sekunde genau. Bei "Wöchentlich" wird nach jeder Ausführung automatisch der nächste Termin (+7 Tage) geplant.</div>
       </div>
 
     </div>
@@ -600,20 +625,31 @@ function onScheduleModeChange(){
   document.getElementById('fieldScheduleSoc').style.display = (mode === '7') ? 'flex' : 'none';
 }
 
+function onScheduleRepeatChange(){
+  const weekly = document.getElementById('scheduleRepeatSelect').value === 'weekly';
+  document.getElementById('fieldScheduleOnce').style.display = weekly ? 'none' : 'flex';
+  document.getElementById('fieldScheduleWeekday').style.display = weekly ? 'flex' : 'none';
+  document.getElementById('fieldScheduleTime').style.display = weekly ? 'flex' : 'none';
+}
+
+const WEEKDAY_LABELS_DE = ["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+
 async function loadSchedule(){
   const infoEl = document.getElementById('scheduleCurrent');
   const cancelBtn = document.getElementById('cancelScheduleBtn');
   try{
     const res = await fetch(`${API_BASE}/api/config/schedule`, { cache:"no-store", credentials:"include" });
     const data = await res.json();
+    const modeTxt = MODE_LABELS[data.scheduled_mode] ?? data.scheduled_mode;
+    const whenTxt = data.scheduled_repeat === 'weekly'
+      ? `Jeden ${WEEKDAY_LABELS_DE[data.scheduled_weekday]}, ${data.scheduled_time_local} Uhr (nächster Termin: ${fmtZurichFull(data.scheduled_at_utc)})`
+      : fmtZurichFull(data.scheduled_at_utc);
     if (data.scheduled_status === 'pending'){
-      infoEl.innerHTML = `<strong>Geplant:</strong> ${fmtZurichFull(data.scheduled_at_utc)} &rarr; `
-        + `${MODE_LABELS[data.scheduled_mode] ?? data.scheduled_mode}`
+      infoEl.innerHTML = `<strong>Geplant:</strong> ${whenTxt} &rarr; ${modeTxt}`
         + (data.scheduled_note ? ` — ${data.scheduled_note}` : '');
       cancelBtn.style.display = 'inline-block';
     } else if (data.scheduled_status === 'executed'){
-      infoEl.innerHTML = `<strong>Zuletzt ausgeführt:</strong> ${fmtZurichFull(data.scheduled_at_utc)} &rarr; `
-        + `${MODE_LABELS[data.scheduled_mode] ?? data.scheduled_mode}`
+      infoEl.innerHTML = `<strong>Zuletzt ausgeführt:</strong> ${whenTxt} &rarr; ${modeTxt}`
         + (data.scheduled_note ? ` — ${data.scheduled_note}` : '')
         + ` (um ${data.scheduled_executed_at || '–'})`;
       cancelBtn.style.display = 'none';
@@ -629,21 +665,38 @@ async function loadSchedule(){
 async function saveSchedule(){
   const btn = document.getElementById('saveScheduleBtn');
   const statusEl = document.getElementById('scheduleStatus');
-  const localVal = document.getElementById('scheduleAtInput').value; // "YYYY-MM-DDTHH:MM"
-  if (!localVal){
-    statusEl.textContent = "Bitte Zeitpunkt wählen.";
-    statusEl.className = "status-msg err";
-    return;
-  }
-  const scheduledAtUtc = zurichLocalToUtcIso(localVal);
+  const repeat = document.getElementById('scheduleRepeatSelect').value;
   const mode = document.getElementById('scheduleModeSelect').value;
   const body = {
-    scheduled_at_utc: scheduledAtUtc,
+    repeat,
     target_mode: parseInt(mode, 10),
     note: document.getElementById('scheduleNoteInput').value,
   };
   if (mode === '4') body.constant_current = document.getElementById('scheduleConstCurrentInput').value;
   if (mode === '7') body.target_soc = document.getElementById('scheduleSocInput').value;
+
+  let confirmTxt;
+  if (repeat === 'weekly'){
+    const weekday = document.getElementById('scheduleWeekdaySelect').value;
+    const time = document.getElementById('scheduleTimeInput').value;
+    if (!time){
+      statusEl.textContent = "Bitte Uhrzeit wählen.";
+      statusEl.className = "status-msg err";
+      return;
+    }
+    body.weekday = parseInt(weekday, 10);
+    body.time_local = time;
+    confirmTxt = `jeden ${WEEKDAY_LABELS_DE[body.weekday]}, ${time} Uhr`;
+  } else {
+    const localVal = document.getElementById('scheduleAtInput').value; // "YYYY-MM-DDTHH:MM"
+    if (!localVal){
+      statusEl.textContent = "Bitte Zeitpunkt wählen.";
+      statusEl.className = "status-msg err";
+      return;
+    }
+    body.scheduled_at_utc = zurichLocalToUtcIso(localVal);
+    confirmTxt = fmtZurichFull(body.scheduled_at_utc);
+  }
 
   btn.disabled = true;
   statusEl.textContent = "Speichere...";
@@ -657,7 +710,7 @@ async function saveSchedule(){
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
-    statusEl.textContent = `Wechsel geplant für ${fmtZurichFull(scheduledAtUtc)}.`;
+    statusEl.textContent = `Wechsel geplant für ${confirmTxt}.`;
     statusEl.className = "status-msg ok";
     await loadSchedule();
   } catch(e){
