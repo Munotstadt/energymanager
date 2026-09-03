@@ -208,6 +208,117 @@ async function handleTargetSocSet(request, env) {
   return jsonResponse({ ok: true, target_soc_percent: val });
 }
 
+/* ---------------------------------------------------------------------- *
+ * Geplanter Lademodus-Wechsel (car.html: "Wechsel zu Zeitpunkt X")
+ * ---------------------------------------------------------------------- */
+
+async function handleScheduleGet(request, env) {
+  const row = await env.DB
+    .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc,
+                     scheduled_constant_current, scheduled_note, scheduled_status,
+                     scheduled_executed_at
+              FROM car_charging_config WHERE id = 1`)
+    .first();
+  if (!row) return jsonResponse({ scheduled_status: null });
+  return jsonResponse(row);
+}
+
+async function handleScheduleSet(request, env) {
+  const body = await request.json();
+  const scheduledAtUtc = body.scheduled_at_utc;
+  const mode = Number(body.target_mode);
+  const note = (body.note || "").toString().slice(0, 500);
+
+  if (!scheduledAtUtc || isNaN(Date.parse(scheduledAtUtc))) {
+    return jsonResponse({ error: "scheduled_at_utc (gültiges ISO-Datum) erforderlich" }, 400);
+  }
+  if (!Number.isFinite(mode) || mode < 0 || mode > 8) {
+    return jsonResponse({ error: "target_mode (0-8) erforderlich" }, 400);
+  }
+  if (Date.parse(scheduledAtUtc) <= Date.now()) {
+    return jsonResponse({ error: "Zeitpunkt liegt in der Vergangenheit" }, 400);
+  }
+
+  const targetSoc = mode === 7 && body.target_soc ? Math.round(Number(body.target_soc)) : null;
+  const constCurrent = mode === 4 && body.constant_current ? Math.round(Number(body.constant_current)) : null;
+
+  await env.DB.prepare(`
+    INSERT INTO car_charging_config
+      (id, scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current,
+       scheduled_note, scheduled_status, scheduled_executed_at, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      scheduled_at_utc=excluded.scheduled_at_utc,
+      scheduled_mode=excluded.scheduled_mode,
+      scheduled_target_soc=excluded.scheduled_target_soc,
+      scheduled_constant_current=excluded.scheduled_constant_current,
+      scheduled_note=excluded.scheduled_note,
+      scheduled_status=excluded.scheduled_status,
+      scheduled_executed_at=excluded.scheduled_executed_at,
+      updated_at=excluded.updated_at`)
+    .bind(scheduledAtUtc, mode, targetSoc, constCurrent, note, nowZurich())
+    .run();
+
+  await logActivity(
+    env.DB,
+    `Geplanter Wechsel angelegt: ${scheduledAtUtc} -> ${modeLabel(mode)}${note ? ` (${note})` : ""}`,
+    "energymanager & Zeitplan"
+  );
+
+  return jsonResponse({ ok: true });
+}
+
+async function handleScheduleCancel(request, env) {
+  await env.DB.prepare(`
+    UPDATE car_charging_config SET scheduled_status = 'cancelled', updated_at = ?
+    WHERE id = 1 AND scheduled_status = 'pending'`)
+    .bind(nowZurich())
+    .run();
+  await logActivity(env.DB, "Geplanter Lademodus-Wechsel abgebrochen", "energymanager & Zeitplan");
+  return jsonResponse({ ok: true });
+}
+
+async function runScheduledModeSwitch(env) {
+  const db = env.DB;
+  const row = await db
+    .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current
+              FROM car_charging_config WHERE id = 1 AND scheduled_status = 'pending'`)
+    .first();
+  if (!row || !row.scheduled_at_utc) return;
+  if (Date.parse(row.scheduled_at_utc) > Date.now()) return; // noch nicht faellig
+
+  const deviceId = await resolveLadestationDeviceId(db);
+  if (!deviceId) {
+    console.log("Geplanter Wechsel: Ladestation nicht gefunden -- Abbruch.");
+    return;
+  }
+  const extra = {};
+  if (Number(row.scheduled_mode) === 4 && row.scheduled_constant_current) {
+    extra.constantCurrentSetting = Math.round(Number(row.scheduled_constant_current));
+  }
+  if (Number(row.scheduled_mode) === 7 && row.scheduled_target_soc) {
+    extra.chargingTargetSoc = Math.round(Number(row.scheduled_target_soc));
+  }
+
+  const oldMode = await currentMode(db, deviceId);
+  try {
+    await setChargerMode(env, deviceId, Number(row.scheduled_mode), extra);
+    await db.prepare(`
+      UPDATE car_charging_config
+      SET scheduled_status = 'executed', scheduled_executed_at = ?, updated_at = ?
+      WHERE id = 1`)
+      .bind(nowZurich(), nowZurich())
+      .run();
+    await logActivity(
+      db,
+      `Geplanter Wechsel ausgefuehrt: ${modeLabel(oldMode)} -> ${modeLabel(Number(row.scheduled_mode))}`,
+      "energymanager & Zeitplan"
+    );
+  } catch (e) {
+    console.log(`Geplanter Wechsel fehlgeschlagen: ${e}`);
+  }
+}
+
 async function runCarChargingAutomation(env) {
   const db = env.DB;
   const thresholds = await getThresholds(db, env);
@@ -603,6 +714,7 @@ async function handleLiveData(request, env) {
 
 export default {
   async scheduled(event, env, ctx) {
+    ctx.waitUntil(runScheduledModeSwitch(env));
     ctx.waitUntil(runCarChargingAutomation(env));
   },
 
@@ -633,6 +745,12 @@ export default {
         resp = await handleTargetSocGet(request, env);
       } else if (pathname === "/api/config/target-soc" && request.method === "POST") {
         resp = await handleTargetSocSet(request, env);
+      } else if (pathname === "/api/config/schedule" && request.method === "GET") {
+        resp = await handleScheduleGet(request, env);
+      } else if (pathname === "/api/config/schedule" && request.method === "POST") {
+        resp = await handleScheduleSet(request, env);
+      } else if (pathname === "/api/config/schedule/cancel" && request.method === "POST") {
+        resp = await handleScheduleCancel(request, env);
       } else if (pathname === "/api/data/live" && request.method === "GET") {
         resp = await handleLiveData(request, env);
       } else if (pathname === "/api/data/car" && request.method === "GET") {
