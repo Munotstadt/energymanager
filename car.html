@@ -106,6 +106,8 @@
     min-width:160px;
   }
   .field.narrow input{min-width:90px;}
+  .field.wide{flex:1 1 260px;}
+  .field.wide input{width:100%;}
   button{
     font-family:'Inter',sans-serif; font-weight:600; font-size:0.85rem;
     background:var(--ink); color:#fff; border:none; border-radius:var(--radius);
@@ -222,6 +224,49 @@
         </div>
         <div id="modeStatus" class="status-msg"></div>
         <div class="hint-txt">Sendet den Befehl direkt an den energymanager-api Worker, der ihn an die Solar-Manager-API weiterleitet. Änderung wirkt i.d.R. innerhalb weniger Sekunden.</div>
+      </div>
+
+      <h2>Geplanter Lademodus-Wechsel</h2>
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="scheduleAtInput">Zeitpunkt (Zürich)</label>
+            <input id="scheduleAtInput" type="datetime-local">
+          </div>
+          <div class="field">
+            <label for="scheduleModeSelect">Neuer Modus</label>
+            <select id="scheduleModeSelect" onchange="onScheduleModeChange()">
+              <option value="0">0 · Fast Charge</option>
+              <option value="1">1 · Only solar</option>
+              <option value="2">2 · Solar &amp; tariff optimized</option>
+              <option value="3" selected>3 · Do not charge</option>
+              <option value="4">4 · Constant current</option>
+              <option value="5">5 · Minimal &amp; Solar</option>
+              <option value="6">6 · Charging Target (kWh)</option>
+              <option value="7">7 · Charging Target (SoC)</option>
+              <option value="8">8 · Aria</option>
+            </select>
+          </div>
+          <div class="field narrow" id="fieldScheduleConstCurrent" style="display:none;">
+            <label for="scheduleConstCurrentInput">Konstantstrom (A)</label>
+            <input id="scheduleConstCurrentInput" type="number" min="6" max="32" step="1" value="16">
+          </div>
+          <div class="field narrow" id="fieldScheduleSoc" style="display:none;">
+            <label for="scheduleSocInput">Ziel-SoC (%)</label>
+            <input id="scheduleSocInput" type="number" min="0" max="100" step="1" value="80">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field wide">
+            <label for="scheduleNoteInput">Erklärung / Grund</label>
+            <input id="scheduleNoteInput" type="text" maxlength="500" placeholder="z.B. Gäste erwartet, Auto muss bis 18 Uhr voll sein">
+          </div>
+          <button onclick="saveSchedule()" id="saveScheduleBtn">Planen</button>
+          <button onclick="cancelSchedule()" id="cancelScheduleBtn" style="display:none;">Abbrechen</button>
+        </div>
+        <div id="scheduleStatus" class="status-msg"></div>
+        <div id="scheduleCurrent" class="hint-txt"></div>
+        <div class="hint-txt">Die Prüfung läuft im 15-Minuten-Takt (gleicher Cron wie die Automatik) — der Wechsel erfolgt also bis zu 15&nbsp;Minuten nach dem gewählten Zeitpunkt, nicht auf die Sekunde genau.</div>
       </div>
 
     </div>
@@ -516,8 +561,132 @@ async function applyChargingMode(){
   }
 }
 
+// ---------- Geplanter Lademodus-Wechsel ----------
+// Wandelt einen Zeitpunkt, der explizit als Europe/Zurich-Wanduhrzeit gemeint ist
+// (aus <input type="datetime-local">, unabhängig von der Browser-Zeitzone),
+// korrekt (DST-sicher) in einen UTC-ISO-String um.
+function zurichOffsetMinutes(date){
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone:'Europe/Zurich', hour12:false,
+      year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', second:'2-digit'
+    }).formatToParts(date).map(p => [p.type, p.value])
+  );
+  const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour === '24' ? 0 : parts.hour, parts.minute, parts.second);
+  return (asUTC - date.getTime()) / 60000;
+}
+function zurichLocalToUtcIso(localStr){
+  // localStr: "YYYY-MM-DDTHH:MM" (aus datetime-local, ohne Zeitzone)
+  const naive = new Date(localStr + ':00Z'); // vorläufig als UTC interpretieren
+  const offset = zurichOffsetMinutes(naive); // z.B. +60 (Winter) oder +120 (Sommer)
+  return new Date(naive.getTime() - offset * 60000).toISOString();
+}
+function fmtZurichFull(iso){
+  if (!iso) return "–";
+  try{
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleString('de-CH', {
+      weekday:'long', day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'
+    });
+  } catch(e){ return iso; }
+}
+
+function onScheduleModeChange(){
+  const mode = document.getElementById('scheduleModeSelect').value;
+  document.getElementById('fieldScheduleConstCurrent').style.display = (mode === '4') ? 'flex' : 'none';
+  document.getElementById('fieldScheduleSoc').style.display = (mode === '7') ? 'flex' : 'none';
+}
+
+async function loadSchedule(){
+  const infoEl = document.getElementById('scheduleCurrent');
+  const cancelBtn = document.getElementById('cancelScheduleBtn');
+  try{
+    const res = await fetch(`${API_BASE}/api/config/schedule`, { cache:"no-store", credentials:"include" });
+    const data = await res.json();
+    if (data.scheduled_status === 'pending'){
+      infoEl.innerHTML = `<strong>Geplant:</strong> ${fmtZurichFull(data.scheduled_at_utc)} &rarr; `
+        + `${MODE_LABELS[data.scheduled_mode] ?? data.scheduled_mode}`
+        + (data.scheduled_note ? ` — ${data.scheduled_note}` : '');
+      cancelBtn.style.display = 'inline-block';
+    } else if (data.scheduled_status === 'executed'){
+      infoEl.innerHTML = `<strong>Zuletzt ausgeführt:</strong> ${fmtZurichFull(data.scheduled_at_utc)} &rarr; `
+        + `${MODE_LABELS[data.scheduled_mode] ?? data.scheduled_mode}`
+        + (data.scheduled_note ? ` — ${data.scheduled_note}` : '')
+        + ` (um ${data.scheduled_executed_at || '–'})`;
+      cancelBtn.style.display = 'none';
+    } else {
+      infoEl.textContent = "Kein Wechsel geplant.";
+      cancelBtn.style.display = 'none';
+    }
+  } catch(e){
+    infoEl.textContent = "Zeitplan konnte nicht geladen werden.";
+  }
+}
+
+async function saveSchedule(){
+  const btn = document.getElementById('saveScheduleBtn');
+  const statusEl = document.getElementById('scheduleStatus');
+  const localVal = document.getElementById('scheduleAtInput').value; // "YYYY-MM-DDTHH:MM"
+  if (!localVal){
+    statusEl.textContent = "Bitte Zeitpunkt wählen.";
+    statusEl.className = "status-msg err";
+    return;
+  }
+  const scheduledAtUtc = zurichLocalToUtcIso(localVal);
+  const mode = document.getElementById('scheduleModeSelect').value;
+  const body = {
+    scheduled_at_utc: scheduledAtUtc,
+    target_mode: parseInt(mode, 10),
+    note: document.getElementById('scheduleNoteInput').value,
+  };
+  if (mode === '4') body.constant_current = document.getElementById('scheduleConstCurrentInput').value;
+  if (mode === '7') body.target_soc = document.getElementById('scheduleSocInput').value;
+
+  btn.disabled = true;
+  statusEl.textContent = "Speichere...";
+  statusEl.className = "status-msg pending";
+  try{
+    const res = await fetch(`${API_BASE}/api/config/schedule`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    statusEl.textContent = `Wechsel geplant für ${fmtZurichFull(scheduledAtUtc)}.`;
+    statusEl.className = "status-msg ok";
+    await loadSchedule();
+  } catch(e){
+    statusEl.textContent = `Fehler beim Speichern: ${e.message}`;
+    statusEl.className = "status-msg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cancelSchedule(){
+  const statusEl = document.getElementById('scheduleStatus');
+  try{
+    const res = await fetch(`${API_BASE}/api/config/schedule/cancel`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    statusEl.textContent = "Geplanter Wechsel abgebrochen.";
+    statusEl.className = "status-msg ok";
+    await loadSchedule();
+  } catch(e){
+    statusEl.textContent = `Fehler beim Abbrechen: ${e.message}`;
+    statusEl.className = "status-msg err";
+  }
+}
+
 // ---------- Init ----------
 showApp();
+loadSchedule();
 </script>
 </body>
 </html>
