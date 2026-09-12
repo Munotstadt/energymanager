@@ -126,6 +126,14 @@
   <div id="status">Lade Daten...</div>
   <div id="content" style="display:none;">
 
+    <h2>Produktion <span class="hint">letzte 45 &amp; nächste 15 Tage · je Vorjahr der letzten 5 Jahre</span></h2>
+    <div class="card" style="padding-bottom:14px;">
+      <div id="prodChartLegend" style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:8px; font-size:0.72rem; color:var(--text-dim);"></div>
+      <div style="overflow-x:auto;">
+        <svg id="prodChart" viewBox="0 0 1040 260" style="width:100%; min-width:900px; height:auto; display:block;"></svg>
+      </div>
+    </div>
+
     <div class="tabs" id="rangeTabs">
       <button type="button" class="tab" data-range="30">30T</button>
       <button type="button" class="tab" data-range="90">90T</button>
@@ -230,7 +238,108 @@ function applyData(rows, sourceLabel){
     `${DATA[0].Date_Display} – ${DATA[DATA.length-1].Date_Display} · ${DATA.length} Tage`;
   document.getElementById('footerInfo').textContent = `Datenquelle: ${sourceLabel}`;
   renderTable();
+  renderProductionChart();
   return true;
+}
+
+// ---------- Produktions-Chart (letzte 45 & nächste 15 Tage, je letzte 5 Jahre) ----------
+const YEAR_COLORS = ['#E30613','#F0501A','#F58B00','#F9B800','#FFDE59']; // k=0 (aktuell/rot) ... k=4 (vor 4 Jahren/gelb)
+
+function buildDataIndex(){
+  const idx = new Map();
+  DATA.forEach(r => idx.set(r.Date_ISO, r));
+  return idx;
+}
+
+function isoFromUTC(ms){
+  const dt = new Date(ms);
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth()+1).padStart(2,'0');
+  const d = String(dt.getUTCDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+function zurichTodayISO(){
+  const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Zurich', year:'numeric', month:'2-digit', day:'2-digit'}).formatToParts(new Date());
+  const get = t => parts.find(p => p.type === t).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function renderProductionChart(){
+  const svgEl = document.getElementById('prodChart');
+  if (!svgEl) return;
+  const idx = buildDataIndex();
+  const todayISO = zurichTodayISO();
+  const [ty, tm, td] = todayISO.split('-').map(Number);
+  const baseUTC = Date.UTC(ty, tm - 1, td);
+
+  const OFFSET_START = -44, OFFSET_END = 15; // 45 letzte + 15 naechste Tage = 60 Tage
+  const groups = [];
+  for (let off = OFFSET_START; off <= OFFSET_END; off++){
+    const dISO = isoFromUTC(baseUTC + off * 86400000);
+    const [gy, gm, gd] = dISO.split('-');
+    const monthDay = `${gm}-${gd}`;
+    const values = [];
+    for (let k = 0; k < 5; k++){
+      const targetYear = parseInt(gy, 10) - k;
+      const targetISO = `${targetYear}-${monthDay}`;
+      const row = idx.get(targetISO);
+      const v = (row && row.Production_kWh !== null && row.Production_kWh !== undefined) ? Number(row.Production_kWh) : null;
+      values.push({ v, iso: targetISO });
+    }
+    groups.push({ offset: off, dateISO: dISO, dayLabel: `${gd}.${gm}`, values });
+  }
+
+  let maxVal = 0;
+  groups.forEach(g => g.values.forEach(({v}) => { if (v !== null && v > maxVal) maxVal = v; }));
+  const niceMax = maxVal > 0 ? Math.ceil(maxVal / 5) * 5 : 1;
+
+  const W = 1040, H = 260;
+  const padL = 42, padR = 10, padT = 16, padB = 42;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const n = groups.length;
+  const groupW = plotW / n;
+  const barGap = 0.5;
+  const barW = Math.max(1, (groupW - barGap * 2) / 5);
+  const yScale = v => padT + plotH - (v / niceMax) * plotH;
+
+  let svg = '';
+
+  const ySteps = 4;
+  for (let s = 0; s <= ySteps; s++){
+    const val = niceMax * s / ySteps;
+    const y = yScale(val);
+    svg += `<line x1="${padL}" y1="${y.toFixed(2)}" x2="${W - padR}" y2="${y.toFixed(2)}" stroke="#e8e8e8" stroke-width="1"/>`;
+    svg += `<text x="${padL - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8a8a8a">${fmt(val,0)}</text>`;
+  }
+
+  groups.forEach((g, gi) => {
+    const gx = padL + gi * groupW;
+    g.values.forEach(({v, iso}, k) => {
+      if (v === null) return;
+      const bx = gx + barGap + k * barW;
+      const by = yScale(v);
+      const bh = (padT + plotH) - by;
+      svg += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${Math.max(barW - 0.3, 0.5).toFixed(2)}" height="${Math.max(bh,0).toFixed(2)}" fill="${YEAR_COLORS[k]}"><title>${iso} · ${fmt(v,1)} kWh</title></rect>`;
+    });
+    if (gi % 5 === 0 || g.offset === 0){
+      svg += `<text x="${(gx + groupW/2).toFixed(2)}" y="${H - padB + 12}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#8a8a8a">${g.dayLabel}</text>`;
+    }
+    if (g.offset === 0){
+      svg += `<line x1="${gx.toFixed(2)}" y1="${padT}" x2="${gx.toFixed(2)}" y2="${(padT + plotH).toFixed(2)}" stroke="#1a1a1a" stroke-width="1" stroke-dasharray="2,2"/>`;
+      svg += `<text x="${gx.toFixed(2)}" y="${padT - 4}" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#1a1a1a">heute</text>`;
+    }
+  });
+
+  svg += `<line x1="${padL}" y1="${(padT + plotH).toFixed(2)}" x2="${W - padR}" y2="${(padT + plotH).toFixed(2)}" stroke="#1a1a1a" stroke-width="1"/>`;
+
+  svgEl.innerHTML = svg;
+
+  const legendLabels = ['aktuelles Jahr', 'vor 1 Jahr', 'vor 2 Jahren', 'vor 3 Jahren', 'vor 4 Jahren'];
+  document.getElementById('prodChartLegend').innerHTML = legendLabels.map((lbl, k) =>
+    `<span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; background:${YEAR_COLORS[k]}; border-radius:2px; display:inline-block;"></span>${lbl}</span>`
+  ).join('');
 }
 
 async function load(){
