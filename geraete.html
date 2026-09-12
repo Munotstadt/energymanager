@@ -126,11 +126,12 @@
   <div id="status">Lade Daten...</div>
   <div id="content" style="display:none;">
 
-    <h2>Produktion <span class="hint">letzte 45 &amp; nächste 15 Tage · je Vorjahr der letzten 5 Jahre</span></h2>
+    <h2>Produktion <span class="hint">letzte 30 &amp; nächste 15 Tage · je Vorjahr der letzten 5 Jahre</span></h2>
     <div class="card" style="padding-bottom:14px;">
       <div id="prodChartLegend" style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:8px; font-size:0.72rem; color:var(--text-dim);"></div>
-      <div style="overflow-x:auto;">
+      <div style="overflow-x:auto; position:relative;">
         <svg id="prodChart" viewBox="0 0 1040 260" style="width:100%; min-width:900px; height:auto; display:block;"></svg>
+        <div id="prodChartTooltip" style="position:absolute; display:none; pointer-events:none; background:#1a1a1a; color:#fff; font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 8px; border-radius:4px; white-space:nowrap; z-index:5; transform:translate(-50%,-100%);"></div>
       </div>
     </div>
 
@@ -273,7 +274,7 @@ function renderProductionChart(){
   const [ty, tm, td] = todayISO.split('-').map(Number);
   const baseUTC = Date.UTC(ty, tm - 1, td);
 
-  const OFFSET_START = -44, OFFSET_END = 15; // 45 letzte + 15 naechste Tage = 60 Tage
+  const OFFSET_START = -29, OFFSET_END = 15; // 30 letzte (inkl. heute) + 15 naechste Tage = 45 Tage
   const groups = [];
   for (let off = OFFSET_START; off <= OFFSET_END; off++){
     const dISO = isoFromUTC(baseUTC + off * 86400000);
@@ -321,7 +322,8 @@ function renderProductionChart(){
       const bx = gx + barGap + k * barW;
       const by = yScale(v);
       const bh = (padT + plotH) - by;
-      svg += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${Math.max(barW - 0.3, 0.5).toFixed(2)}" height="${Math.max(bh,0).toFixed(2)}" fill="${YEAR_COLORS[k]}"><title>${iso} · ${fmt(v,1)} kWh</title></rect>`;
+      const [iy, im, id] = iso.split('-');
+      svg += `<rect class="prodBar" x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${Math.max(barW - 0.3, 0.5).toFixed(2)}" height="${Math.max(bh,0).toFixed(2)}" fill="${YEAR_COLORS[k]}" data-date="${id}.${im}.${iy}" data-value="${fmt(v,1)} kWh"/>`;
     });
     if (gi % 5 === 0 || g.offset === 0){
       svg += `<text x="${(gx + groupW/2).toFixed(2)}" y="${H - padB + 12}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#8a8a8a">${g.dayLabel}</text>`;
@@ -335,11 +337,39 @@ function renderProductionChart(){
   svg += `<line x1="${padL}" y1="${(padT + plotH).toFixed(2)}" x2="${W - padR}" y2="${(padT + plotH).toFixed(2)}" stroke="#1a1a1a" stroke-width="1"/>`;
 
   svgEl.innerHTML = svg;
+  attachProdChartTooltip(svgEl);
 
-  const legendLabels = ['aktuelles Jahr', 'vor 1 Jahr', 'vor 2 Jahren', 'vor 3 Jahren', 'vor 4 Jahren'];
+  const legendLabels = [0,1,2,3,4].map(k => String(ty - k));
   document.getElementById('prodChartLegend').innerHTML = legendLabels.map((lbl, k) =>
     `<span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; background:${YEAR_COLORS[k]}; border-radius:2px; display:inline-block;"></span>${lbl}</span>`
   ).join('');
+}
+
+let prodChartTooltipBound = false;
+function attachProdChartTooltip(svgEl){
+  const tip = document.getElementById('prodChartTooltip');
+  const wrap = svgEl.parentElement;
+  if (!prodChartTooltipBound){
+    svgEl.addEventListener('mouseover', e => {
+      const rect = e.target.closest('.prodBar');
+      if (!rect) return;
+      tip.textContent = `${rect.dataset.date} · ${rect.dataset.value}`;
+      tip.style.display = 'block';
+    });
+    svgEl.addEventListener('mousemove', e => {
+      const rect = e.target.closest('.prodBar');
+      if (!rect) return;
+      const wrapBox = wrap.getBoundingClientRect();
+      tip.style.left = `${e.clientX - wrapBox.left}px`;
+      tip.style.top = `${e.clientY - wrapBox.top - 8}px`;
+    });
+    svgEl.addEventListener('mouseout', e => {
+      const rect = e.target.closest('.prodBar');
+      if (!rect) return;
+      tip.style.display = 'none';
+    });
+    prodChartTooltipBound = true;
+  }
 }
 
 async function load(){
