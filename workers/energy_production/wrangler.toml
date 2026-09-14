@@ -1,0 +1,13 @@
+name = "energy_production"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB_ENERGY"
+database_name = "energy"
+database_id = "5dfeb585-9598-41c5-a485-52d2831e4ec2"
+
+[[d1_databases]]
+binding = "DB_METEO"
+database_name = "meteo"
+database_id = "17e827ee-3f96-4ce9-b93c-be3cea624448"
