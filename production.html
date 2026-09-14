@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Produktion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
+    --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
+    --accent:#E30613; --accent-dim:#fdeceb;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
+    --grid:#e8e8e8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:24px 20px 60px;}
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .nav-links{display:flex; gap:2px;}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
+  header.topbar .settings-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .settings-link:hover{background:var(--grey-100);}
+
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
+  .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px;}
+  h2{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1rem;
+    margin:28px 0 10px; color:var(--text);
+  }
+  h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
+
+  .date-picker{display:flex; align-items:center; gap:8px; font-size:0.85rem;}
+  .date-picker label{color:var(--text-dim); font-size:0.78rem;}
+  .date-picker input[type="date"]{
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:5px 8px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); color:var(--ink); background:#fff;
+  }
+  .date-picker button{
+    font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:500; padding:6px 12px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+    cursor:pointer;
+  }
+  .date-picker button:hover{background:var(--grey-100);}
+
+  .card{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:16px 18px 12px; margin-bottom:6px;
+  }
+  .top-row{display:flex; gap:16px; align-items:stretch; flex-wrap:wrap;}
+  .top-row .col-left{flex:1 1 320px; min-width:280px;}
+  .top-row .col-right{flex:1 1 300px; min-width:280px;}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .kpi{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:14px 16px 12px; border-left:3px solid var(--yellow);
+  }
+  .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.25rem; font-weight:600; margin-top:4px;}
+  .kpi .value small{font-size:0.68rem; color:var(--text-dim); font-weight:400;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
+  .legend .item{display:flex; align-items:center; gap:5px;}
+  .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
+  .legend .sw.line{border-radius:0; height:2px; width:14px; margin-top:4px;}
+  .legend .sw.dashed{border-radius:0; height:0; width:14px; margin-top:4px; border-top:2px dashed;}
+
+  .chart-tooltip{
+    position:fixed; z-index:50; background:var(--ink); color:#fff; font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem; padding:8px 10px; border-radius:var(--radius); pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.25); display:none; line-height:1.5; white-space:nowrap;
+  }
+  .chart-tooltip .tt-time{color:#bbb; font-size:0.68rem; margin-bottom:3px;}
+  .chart-tooltip .tt-row{display:flex; align-items:center; gap:6px;}
+  .chart-tooltip .tt-sw{width:8px; height:8px; border-radius:2px; display:inline-block; flex-shrink:0;}
+  svg.linechart, svg.barchart{cursor:crosshair;}
+
+  #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
+  .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Munotstadt <span>Energy</span></div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="production.html" class="nav-link active">Produktion</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
+      <a href="car.html" class="nav-link">Auto</a>
+      <a href="costs.html" class="nav-link">Kosten</a>
+    </div>
+    <a href="settings.html" class="settings-link">&#9881; Settings</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
+  </div>
+</header>
+<div class="wrap">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1>Tagesproduktion</h1>
+      <div class="sub" id="subline">Lade Daten...</div>
+    </div>
+    <div class="date-picker">
+      <label for="dayInput">Tag</label>
+      <input type="date" id="dayInput">
+      <button type="button" id="yesterdayBtn">Gestern</button>
+    </div>
+  </div>
+
+  <div id="status">Lade Daten...</div>
+  <div id="content" style="display:none;">
+
+    <div class="top-row">
+      <div class="col-left">
+        <h2>Sonnenstand</h2>
+        <div class="kpi-grid">
+          <div class="kpi" style="border-left-color:var(--amber);">
+            <div class="label">Sonnenaufgang</div>
+            <div class="value" id="kpiSunrise">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--purple);">
+            <div class="label">Sonnenuntergang</div>
+            <div class="value" id="kpiSunset">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--teal);">
+            <div class="label">Tageslänge</div>
+            <div class="value" id="kpiDaylength">–</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-right">
+        <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
+        <div class="card">
+          <div class="legend" id="legendBar"></div>
+          <div id="chartBar"></div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Tagesverlauf <span class="hint">Produktion, Globalstrahlung &amp; Sonnenschein</span></h2>
+    <div class="card">
+      <div class="legend" id="legendIntraday"></div>
+      <div id="chartIntraday"></div>
+    </div>
+
+  </div>
+  <div class="footer" id="footerInfo">Datenquelle: energy_production-api</div>
+</div>
+<div class="chart-tooltip" id="chartTooltip"></div>
+
+<script>
+// ---------- Cloudflare Worker API (energy_production) ----------
+const API_BASE = "https://api.energy.munot.app/api";
+
+function fmt(n, digits=1){
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return n.toLocaleString('de-CH', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+}
+function fmtTimeUtcIso(iso){
+  // Zeitstempel sind UTC (mit oder ohne 'Z') -> Anzeige in Europe/Zurich
+  try{
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'});
+  } catch(e){ return iso; }
+}
+function toUtcMs(iso){
+  return new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime();
+}
+
+function zurichTodayStr(){
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Europe/Zurich', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+}
+function zurichYesterdayStr(){
+  const now = new Date();
+  const y = new Date(now.getTime() - 24*60*60*1000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Europe/Zurich', year:'numeric', month:'2-digit', day:'2-digit' }).format(y);
+}
+
+// Dezimalstunden (z.B. 7.13) -> "HH:MM"
+function decimalHourToHHMM(dec){
+  if (dec === null || dec === undefined || isNaN(dec)) return "–";
+  const h = Math.floor(dec);
+  const m = Math.round((dec - h) * 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+// Dezimalstunden (Zurich-lokal, am gewaehlten Kalendertag) -> UTC-Timestamp (ms), fuer X-Achsen-Marker
+function decimalHourToUtcMs(dateStr, dec){
+  if (dec === null || dec === undefined || isNaN(dec)) return null;
+  const h = Math.floor(dec);
+  const m = Math.round((dec - h) * 60);
+  // Naive UTC-Zeit fuer den Tag bauen, dann um den Zurich-Offset an diesem Datum korrigieren.
+  const naiveUtc = new Date(Date.UTC(
+    parseInt(dateStr.slice(0,4)), parseInt(dateStr.slice(5,7))-1, parseInt(dateStr.slice(8,10)), h, m
+  ));
+  const asZurichStr = naiveUtc.toLocaleString('en-US', {timeZone:'Europe/Zurich'});
+  const asUtcStr = naiveUtc.toLocaleString('en-US', {timeZone:'UTC'});
+  const offsetMs = new Date(asZurichStr) - new Date(asUtcStr);
+  return naiveUtc.getTime() - offsetMs;
+}
+
+async function fetchJson(path, params){
+  const url = new URL(`${API_BASE}/${path}`);
+  Object.entries(params||{}).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url, {cache:"no-store", credentials:"include"});
+  if (!res.ok) throw new Error(`API HTTP ${res.status} (${path})`);
+  return res.json();
+}
+
+// ---------- Vertikales Balkendiagramm: Min/Max/Aktuell/Schätzung, Median/Mean als Linien ----------
+function renderBarChart(containerId, bars, refLines, opts={}){
+  const el = document.getElementById(containerId);
+  const w = el.clientWidth > 0 ? el.clientWidth : 320;
+  const h = opts.height || 260;
+  const padL = 42, padR = 10, padT = 16, padB = 28;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  const validBars = bars.filter(b => b.value !== null && b.value !== undefined && !isNaN(b.value));
+  const allVals = [
+    ...validBars.map(b => b.value),
+    ...refLines.filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value)).map(r => r.value),
+  ];
+  if (allVals.length === 0){
+    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
+    return;
+  }
+  let vMax = Math.max(0, ...allVals);
+  vMax = vMax === 0 ? 1 : vMax * 1.15;
+  const vMin = 0;
+
+  const y = v => padT + plotH - (v - vMin) / (vMax - vMin) * plotH;
+  const bw = plotW / bars.length;
+
+  let gridSvg = '';
+  const yTicks = 4;
+  for (let i=0; i<=yTicks; i++){
+    const v = vMin + (vMax - vMin) * i / yTicks;
+    const yy = y(v);
+    gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}</text>`;
+  }
+
+  let barsSvg = '';
+  bars.forEach((b,i) => {
+    const cx = padL + bw*i + bw/2;
+    const bwInner = Math.min(46, bw*0.55);
+    if (b.value === null || b.value === undefined || isNaN(b.value)){
+      barsSvg += `<text x="${cx}" y="${padT+plotH-4}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono, monospace" fill="var(--text-dim2)">–</text>`;
+    } else {
+      const yy = y(b.value);
+      barsSvg += `<rect x="${(cx-bwInner/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bwInner}" height="${(padT+plotH-yy).toFixed(1)}" rx="3" fill="${b.color}"/>`;
+      barsSvg += `<text x="${cx}" y="${(yy-6).toFixed(1)}" text-anchor="middle" font-size="10.5" font-family="IBM Plex Mono, monospace" fill="var(--text)">${fmt(b.value,1)}</text>`;
+    }
+    barsSvg += `<text x="${cx}" y="${h-8}" text-anchor="middle" font-size="10" font-family="Inter, sans-serif" fill="var(--text-dim)">${b.label}</text>`;
+  });
+
+  let refSvg = '';
+  refLines.forEach(r => {
+    if (r.value === null || r.value === undefined || isNaN(r.value)) return;
+    const yy = y(r.value);
+    refSvg += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+    refSvg += `<text x="${w-padR}" y="${(yy-4).toFixed(1)}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="${r.color}">${r.label} ${fmt(r.value,1)}</text>`;
+  });
+
+  el.innerHTML = `<svg class="barchart" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${barsSvg}${refSvg}
+  </svg>`;
+}
+
+function renderLegend(containerId, items){
+  document.getElementById(containerId).innerHTML = items.map(it => {
+    const swClass = it.style === 'dashed' ? 'sw dashed' : (it.style === 'line' ? 'sw line' : 'sw');
+    const styleAttr = it.style === 'dashed' ? `border-color:${it.color}` : `background:${it.color}`;
+    return `<span class="item"><span class="${swClass}" style="${styleAttr}"></span>${it.label}</span>`;
+  }).join('');
+}
+
+// ---------- Zweiachsiges Liniendiagramm: Produktion (W) + Globalstrahlung (W/m²) links, Sonnenschein (min) rechts ----------
+function renderIntradayChart(containerId, series, opts={}){
+  const el = document.getElementById(containerId);
+  const w = el.clientWidth > 0 ? el.clientWidth : 640;
+  const h = opts.height || 260;
+  const padL = 48, padR = 46, padT = 14, padB = 26;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  const tMin = opts.windowStart, tMax = opts.windowEnd;
+
+  const leftSeries = series.filter(s => s.axis !== 'right');
+  const rightSeries = series.filter(s => s.axis === 'right');
+
+  let leftVals = [];
+  leftSeries.forEach(s => s.points.forEach(p => { if (p.v !== null && p.v !== undefined && !isNaN(p.v)) leftVals.push(p.v); }));
+  let rightVals = [];
+  rightSeries.forEach(s => s.points.forEach(p => { if (p.v !== null && p.v !== undefined && !isNaN(p.v)) rightVals.push(p.v); }));
+
+  if (leftVals.length === 0 && rightVals.length === 0){
+    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
+    return;
+  }
+
+  let lMin = 0, lMax = Math.max(1, ...leftVals) * 1.08;
+  let rMin = 0, rMax = Math.max(1, ...rightVals) * 1.08;
+
+  const x = t => padL + (tMax === tMin ? plotW/2 : (t - tMin) / (tMax - tMin) * plotW);
+  const yL = v => padT + plotH - (v - lMin) / (lMax - lMin) * plotH;
+  const yR = v => padT + plotH - (v - rMin) / (rMax - rMin) * plotH;
+
+  let gridSvg = '';
+  const yTicks = 4;
+  for (let i=0; i<=yTicks; i++){
+    const vL = lMin + (lMax - lMin) * i / yTicks;
+    const yy = yL(vL);
+    gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(vL,0)}</text>`;
+    if (rightVals.length){
+      const vR = rMin + (rMax - rMin) * i / yTicks;
+      gridSvg += `<text x="${w-padR+6}" y="${yy+3}" text-anchor="start" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(vR,0)}</text>`;
+    }
+  }
+
+  const xTicks = 6;
+  let xLabels = '';
+  for (let i=0; i<=xTicks; i++){
+    const t = tMin + (tMax - tMin) * i / xTicks;
+    xLabels += `<text x="${x(t)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmtTimeUtcIso(new Date(t).toISOString())}</text>`;
+  }
+
+  // Sonnenaufgang / -untergang Marker
+  let sunSvg = '';
+  (opts.sunMarkers||[]).forEach(m => {
+    if (m.t === null || m.t === undefined || m.t < tMin || m.t > tMax) return;
+    const xx = x(m.t);
+    sunSvg += `<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${padT+plotH}" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="3,3"/>`;
+    sunSvg += `<text x="${xx.toFixed(1)}" y="${padT-4}" text-anchor="middle" font-size="9" font-family="Inter, sans-serif" fill="var(--amber)">${m.label}</text>`;
+  });
+
+  let paths = '';
+  const allPointTimes = new Set();
+  let markers = '';
+  series.forEach(s => {
+    const yy = s.axis === 'right' ? yR : yL;
+    const pts = s.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v) && p.t >= tMin && p.t <= tMax);
+    if (pts.length === 0) return;
+    const d = pts.map((p,i) => `${i===0 ? 'M' : 'L'} ${x(p.t).toFixed(1)} ${yy(p.v).toFixed(1)}`).join(' ');
+    paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    pts.forEach(p => allPointTimes.add(p.t));
+  });
+
+  el.innerHTML = `<svg class="linechart" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${sunSvg}${paths}
+  </svg>`;
+
+  const svgEl = el.querySelector('svg');
+  const tooltip = document.getElementById('chartTooltip');
+  const sortedTimes = Array.from(allPointTimes).sort((a,b) => a-b);
+
+  function nearestTime(clientX){
+    if (sortedTimes.length === 0) return null;
+    const rect = svgEl.getBoundingClientRect();
+    const scale = w / rect.width;
+    const svgX = (clientX - rect.left) * scale;
+    const clickT = tMin + (svgX - padL) / plotW * (tMax - tMin);
+    let best = sortedTimes[0], bestDiff = Math.abs(sortedTimes[0] - clickT);
+    for (const t of sortedTimes){
+      const diff = Math.abs(t - clickT);
+      if (diff < bestDiff){ best = t; bestDiff = diff; }
+    }
+    return best;
+  }
+
+  function showTooltip(clientX, clientY, t){
+    const rows = series.map(s => {
+      // naechster Punkt dieser Serie zum gewaehlten Zeitpunkt (Serien koennen unterschiedliche Raster haben)
+      let best = null, bestDiff = Infinity;
+      s.points.forEach(p => {
+        if (p.v === null || p.v === undefined || isNaN(p.v)) return;
+        const diff = Math.abs(p.t - t);
+        if (diff < bestDiff){ bestDiff = diff; best = p; }
+      });
+      if (!best || bestDiff > 40*60*1000) return null;
+      return `<div class="tt-row"><span class="tt-sw" style="background:${s.color}"></span>${s.label}: <b style="margin-left:auto">${fmt(best.v,1)} ${s.unit||''}</b></div>`;
+    }).filter(Boolean);
+    if (rows.length === 0) return;
+    tooltip.innerHTML = `<div class="tt-time">${fmtTimeUtcIso(new Date(t).toISOString())} Uhr</div>${rows.join('')}`;
+    tooltip.style.display = 'block';
+    const ttW = tooltip.offsetWidth || 160;
+    let left = clientX + 12, top = clientY - 10;
+    if (left + ttW > window.innerWidth - 8) left = clientX - ttW - 12;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = Math.max(8, top) + 'px';
+  }
+
+  svgEl.addEventListener('click', (ev) => {
+    const t = nearestTime(ev.clientX);
+    if (t === null) return;
+    if (tooltip.style.display === 'block' && tooltip.dataset.t === String(t)){
+      tooltip.style.display = 'none';
+      return;
+    }
+    tooltip.dataset.t = String(t);
+    showTooltip(ev.clientX, ev.clientY, t);
+    ev.stopPropagation();
+  });
+}
+
+document.addEventListener('click', () => {
+  const tt = document.getElementById('chartTooltip');
+  if (tt) tt.style.display = 'none';
+});
+
+// Zurich-Kalendertag -> UTC-Fenster (fuer Chart-Achsen)
+function zurichDayRangeUtc(dateStr){
+  const approx = new Date(dateStr + 'T00:00:00Z');
+  const utc = new Date(approx.toLocaleString('en-US', {timeZone:'UTC'}));
+  const zur = new Date(approx.toLocaleString('en-US', {timeZone:'Europe/Zurich'}));
+  const offsetMin = (zur - utc) / 60000;
+  const startUtc = new Date(approx.getTime() - offsetMin * 60000);
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  return { startUtc, endUtc };
+}
+
+let selectedDate = zurichYesterdayStr();
+
+async function load(){
+  document.getElementById('status').style.display = 'block';
+  document.getElementById('status').textContent = 'Lade Daten...';
+  document.getElementById('content').style.display = 'none';
+  try{
+    const [summary, stats, intraday] = await Promise.all([
+      fetchJson('day-summary', {date: selectedDate}),
+      fetchJson('day-stats', {date: selectedDate}),
+      fetchJson('day-intraday', {date: selectedDate}),
+    ]);
+
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    const dayLabel = new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-CH', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' });
+    document.getElementById('subline').textContent = dayLabel;
+
+    // --- Sonnenstand ---
+    document.getElementById('kpiSunrise').innerHTML = `${decimalHourToHHMM(summary.sunrise)} <small>Uhr</small>`;
+    document.getElementById('kpiSunset').innerHTML = `${decimalHourToHHMM(summary.sunset)} <small>Uhr</small>`;
+    document.getElementById('kpiDaylength').innerHTML = summary.day_length !== null
+      ? `${decimalHourToHHMM(summary.day_length)} <small>h</small>` : '–';
+
+    // --- Balkendiagramm: Min / Max / Aktuell / Schätzung, Median & Mean als Linien ---
+    const bars = [
+      {label:'Min', value: stats.min, color:'var(--grey-600)'},
+      {label:'Max', value: stats.max, color:'var(--grey-600)'},
+      {label:'Aktuell', value: summary.actual_kwh, color:'var(--yellow)'},
+      {label:'Schätzung', value: summary.estimate_kwh, color:'var(--blue)'},
+    ];
+    const refLines = [
+      {label:'Median', value: stats.median, color:'var(--purple)'},
+      {label:'Mean', value: stats.mean, color:'var(--teal)'},
+    ];
+    renderLegend('legendBar', [
+      {label:`Min/Max (n=${stats.count||0} Jahre)`, color:'var(--grey-600)'},
+      {label:'Aktuell', color:'var(--yellow)'},
+      {label:'Schätzung', color:'var(--blue)'},
+      {label:'Median', color:'var(--purple)', style:'dashed'},
+      {label:'Mean', color:'var(--teal)', style:'dashed'},
+    ]);
+    renderBarChart('chartBar', bars, refLines, {height: 260});
+
+    // --- Tagesverlauf ---
+    const { startUtc, endUtc } = zurichDayRangeUtc(selectedDate);
+    const windowStart = startUtc.getTime(), windowEnd = endUtc.getTime();
+
+    const prodSeries = {
+      label:'Produktion', unit:'W', color:'#d4a900', axis:'left',
+      points: intraday.production.map(p => ({ t: toUtcMs(p.timestamp), v: p.pv_generation })),
+    };
+    const radSeries = {
+      label:'Globalstrahlung', unit:'W/m²', color:'#1f6feb', axis:'left',
+      points: intraday.meteo.map(p => ({ t: toUtcMs(p.obs_datetime), v: p.radiation_wm2 })),
+    };
+    const sunSeries = {
+      label:'Sonnenschein', unit:'min/h', color:'#1f9d55', axis:'right',
+      points: intraday.meteo.map(p => ({ t: toUtcMs(p.obs_datetime), v: p.sunshine_min })),
+    };
+    renderLegend('legendIntraday', [
+      {label:'Produktion (W, links)', color:prodSeries.color},
+      {label:'Globalstrahlung (W/m², links)', color:radSeries.color},
+      {label:'Sonnenschein (min/h, rechts)', color:sunSeries.color},
+      {label:'Sonnenauf-/-untergang', color:'var(--amber)', style:'dashed'},
+    ]);
+
+    const sunriseT = decimalHourToUtcMs(selectedDate, summary.sunrise);
+    const sunsetT = decimalHourToUtcMs(selectedDate, summary.sunset);
+
+    renderIntradayChart('chartIntraday', [prodSeries, radSeries, sunSeries], {
+      height: 280, windowStart, windowEnd,
+      sunMarkers: [
+        {t: sunriseT, label:'Aufgang'},
+        {t: sunsetT, label:'Untergang'},
+      ],
+    });
+
+  } catch(e){
+    console.warn('API-Zugriff fehlgeschlagen:', e);
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
+  }
+}
+
+const dayInput = document.getElementById('dayInput');
+dayInput.max = zurichTodayStr();
+dayInput.value = selectedDate;
+dayInput.addEventListener('change', () => {
+  if (!dayInput.value) return;
+  selectedDate = dayInput.value;
+  load();
+});
+document.getElementById('yesterdayBtn').addEventListener('click', () => {
+  selectedDate = zurichYesterdayStr();
+  dayInput.value = selectedDate;
+  load();
+});
+
+load();
+</script>
+  <script src="https://munotstadt.github.io/db_admin/assets/improvements-button.js" data-app="energymanager" data-position="left"></script>
+</body>
+</html>
