@@ -22,6 +22,7 @@
     --accent:#E30613; --accent-dim:#fdeceb;
     --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
     --grid:#e8e8e8;
+    --sun-fill:#fff3b0;
   }
   *{box-sizing:border-box;}
   body{
@@ -79,9 +80,6 @@
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
     padding:16px 18px 12px; margin-bottom:6px;
   }
-  .top-row{display:flex; gap:16px; align-items:stretch; flex-wrap:wrap;}
-  .top-row .col-left{flex:1 1 320px; min-width:280px;}
-  .top-row .col-right{flex:1 1 300px; min-width:280px;}
 
   .kpi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
   .kpi{
@@ -97,6 +95,7 @@
   .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
   .legend .sw.line{border-radius:0; height:2px; width:14px; margin-top:4px;}
   .legend .sw.dashed{border-radius:0; height:0; width:14px; margin-top:4px; border-top:2px dashed;}
+  .legend .sw.area{border-radius:2px;}
 
   .chart-tooltip{
     position:fixed; z-index:50; background:var(--ink); color:#fff; font-family:'IBM Plex Mono',monospace;
@@ -106,7 +105,7 @@
   .chart-tooltip .tt-time{color:#bbb; font-size:0.68rem; margin-bottom:3px;}
   .chart-tooltip .tt-row{display:flex; align-items:center; gap:6px;}
   .chart-tooltip .tt-sw{width:8px; height:8px; border-radius:2px; display:inline-block; flex-shrink:0;}
-  svg.linechart, svg.barchart{cursor:crosshair;}
+  svg.linechart, svg.rangebar{cursor:crosshair;}
 
   #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
   .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
@@ -145,31 +144,26 @@
   <div id="status">Lade Daten...</div>
   <div id="content" style="display:none;">
 
-    <div class="top-row">
-      <div class="col-left">
-        <h2>Sonnenstand</h2>
-        <div class="kpi-grid">
-          <div class="kpi" style="border-left-color:var(--amber);">
-            <div class="label">Sonnenaufgang</div>
-            <div class="value" id="kpiSunrise">–</div>
-          </div>
-          <div class="kpi" style="border-left-color:var(--purple);">
-            <div class="label">Sonnenuntergang</div>
-            <div class="value" id="kpiSunset">–</div>
-          </div>
-          <div class="kpi" style="border-left-color:var(--teal);">
-            <div class="label">Tageslänge</div>
-            <div class="value" id="kpiDaylength">–</div>
-          </div>
-        </div>
+    <h2>Sonnenstand</h2>
+    <div class="kpi-grid">
+      <div class="kpi" style="border-left-color:var(--amber);">
+        <div class="label">Sonnenaufgang</div>
+        <div class="value" id="kpiSunrise">–</div>
       </div>
-      <div class="col-right">
-        <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
-        <div class="card">
-          <div class="legend" id="legendBar"></div>
-          <div id="chartBar"></div>
-        </div>
+      <div class="kpi" style="border-left-color:var(--purple);">
+        <div class="label">Sonnenuntergang</div>
+        <div class="value" id="kpiSunset">–</div>
       </div>
+      <div class="kpi" style="border-left-color:var(--teal);">
+        <div class="label">Tageslänge</div>
+        <div class="value" id="kpiDaylength">–</div>
+      </div>
+    </div>
+
+    <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
+    <div class="card">
+      <div class="legend" id="legendBar"></div>
+      <div id="chartBar"></div>
     </div>
 
     <h2>Tagesverlauf <span class="hint">Produktion, Globalstrahlung &amp; Sonnenschein</span></h2>
@@ -223,7 +217,6 @@ function decimalHourToUtcMs(dateStr, dec){
   if (dec === null || dec === undefined || isNaN(dec)) return null;
   const h = Math.floor(dec);
   const m = Math.round((dec - h) * 60);
-  // Naive UTC-Zeit fuer den Tag bauen, dann um den Zurich-Offset an diesem Datum korrigieren.
   const naiveUtc = new Date(Date.UTC(
     parseInt(dateStr.slice(0,4)), parseInt(dateStr.slice(5,7))-1, parseInt(dateStr.slice(8,10)), h, m
   ));
@@ -241,147 +234,158 @@ async function fetchJson(path, params){
   return res.json();
 }
 
-// ---------- Vertikales Balkendiagramm: Min/Max/Aktuell/Schätzung, Median/Mean als Linien ----------
-function renderBarChart(containerId, bars, refLines, opts={}){
+// ---------- Vertikale Range-Bar: EIN Balken (Min-Max), mit Marker-Linien fuer Aktuell/Schaetzung/Median/Mean/30-Tage-Schnitt ----------
+function renderRangeBar(containerId, range, markers, opts={}){
   const el = document.getElementById(containerId);
   const w = el.clientWidth > 0 ? el.clientWidth : 320;
-  const h = opts.height || 260;
-  const padL = 42, padR = 10, padT = 16, padB = 28;
+  const h = opts.height || 280;
+  const padL = 46, padR = 130, padT = 18, padB = 26;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
-  const validBars = bars.filter(b => b.value !== null && b.value !== undefined && !isNaN(b.value));
   const allVals = [
-    ...validBars.map(b => b.value),
-    ...refLines.filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value)).map(r => r.value),
-  ];
+    range.min, range.max,
+    ...markers.filter(m => m.value !== null && m.value !== undefined && !isNaN(m.value)).map(m => m.value),
+  ].filter(v => v !== null && v !== undefined && !isNaN(v));
+
   if (allVals.length === 0){
     el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
     return;
   }
-  let vMax = Math.max(0, ...allVals);
-  vMax = vMax === 0 ? 1 : vMax * 1.15;
-  const vMin = 0;
+  const scaleMax = Math.max(...allVals) * 1.15 || 1;
+  const scaleMin = 0;
 
-  const y = v => padT + plotH - (v - vMin) / (vMax - vMin) * plotH;
-  const bw = plotW / bars.length;
+  const y = v => padT + plotH - (v - scaleMin) / (scaleMax - scaleMin) * plotH;
+  const barCx = padL + plotW * 0.28;
+  const barW = Math.min(70, plotW * 0.4);
 
   let gridSvg = '';
-  const yTicks = 4;
+  const yTicks = 5;
   for (let i=0; i<=yTicks; i++){
-    const v = vMin + (vMax - vMin) * i / yTicks;
+    const v = scaleMin + (scaleMax - scaleMin) * i / yTicks;
     const yy = y(v);
     gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
-    gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}</text>`;
+    gridSvg += `<text x="${padL-8}" y="${yy+3}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}</text>`;
   }
 
-  let barsSvg = '';
-  bars.forEach((b,i) => {
-    const cx = padL + bw*i + bw/2;
-    const bwInner = Math.min(46, bw*0.55);
-    if (b.value === null || b.value === undefined || isNaN(b.value)){
-      barsSvg += `<text x="${cx}" y="${padT+plotH-4}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono, monospace" fill="var(--text-dim2)">–</text>`;
-    } else {
-      const yy = y(b.value);
-      barsSvg += `<rect x="${(cx-bwInner/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${bwInner}" height="${(padT+plotH-yy).toFixed(1)}" rx="3" fill="${b.color}"/>`;
-      barsSvg += `<text x="${cx}" y="${(yy-6).toFixed(1)}" text-anchor="middle" font-size="10.5" font-family="IBM Plex Mono, monospace" fill="var(--text)">${fmt(b.value,1)}</text>`;
-    }
-    barsSvg += `<text x="${cx}" y="${h-8}" text-anchor="middle" font-size="10" font-family="Inter, sans-serif" fill="var(--text-dim)">${b.label}</text>`;
+  // Hintergrund-Track (0 -> scaleMax) + hervorgehobenes Min-Max-Band
+  let barSvg = `<rect x="${(barCx-barW/2).toFixed(1)}" y="${padT}" width="${barW}" height="${plotH}" rx="4" fill="var(--grey-100)"/>`;
+  if (range.min !== null && range.max !== null){
+    const yTop = y(range.max), yBot = y(range.min);
+    barSvg += `<rect x="${(barCx-barW/2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW}" height="${(yBot-yTop).toFixed(1)}" rx="4" fill="var(--blue)" opacity="0.35"/>`;
+    barSvg += `<text x="${barCx}" y="${(yTop-8).toFixed(1)}" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--blue)">Max ${fmt(range.max,1)}</text>`;
+    barSvg += `<text x="${barCx}" y="${(yBot+14).toFixed(1)}" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--blue)">Min ${fmt(range.min,1)}</text>`;
+  }
+
+  // Marker-Linien quer durch die Bar, Labels rechts daneben (gestaffelt gegen Ueberlappung)
+  const tickX1 = barCx - barW/2 - 6, tickX2 = barCx + barW/2 + 6;
+  const placed = [];
+  let markerSvg = '';
+  markers.forEach(m => {
+    if (m.value === null || m.value === undefined || isNaN(m.value)) return;
+    let yy = y(m.value);
+    // simple vertical de-collision for label rows
+    while (placed.some(p => Math.abs(p - yy) < 14)) yy += 14;
+    placed.push(yy);
+    const dash = m.dash ? ` stroke-dasharray="${m.dash}"` : '';
+    markerSvg += `<line x1="${tickX1.toFixed(1)}" y1="${y(m.value).toFixed(1)}" x2="${tickX2.toFixed(1)}" y2="${y(m.value).toFixed(1)}" stroke="${m.color}" stroke-width="2"${dash}/>`;
+    markerSvg += `<text x="${(tickX2+8).toFixed(1)}" y="${(yy+3).toFixed(1)}" font-size="10" font-family="IBM Plex Mono, monospace" fill="${m.color}">${m.label} ${fmt(m.value,1)}</text>`;
   });
 
-  let refSvg = '';
-  refLines.forEach(r => {
-    if (r.value === null || r.value === undefined || isNaN(r.value)) return;
-    const yy = y(r.value);
-    refSvg += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="${r.color}" stroke-width="1.5" stroke-dasharray="5,3"/>`;
-    refSvg += `<text x="${w-padR}" y="${(yy-4).toFixed(1)}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="${r.color}">${r.label} ${fmt(r.value,1)}</text>`;
-  });
-
-  el.innerHTML = `<svg class="barchart" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
-    ${gridSvg}${barsSvg}${refSvg}
+  el.innerHTML = `<svg class="rangebar" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${barSvg}${markerSvg}
   </svg>`;
 }
 
 function renderLegend(containerId, items){
   document.getElementById(containerId).innerHTML = items.map(it => {
-    const swClass = it.style === 'dashed' ? 'sw dashed' : (it.style === 'line' ? 'sw line' : 'sw');
+    const swClass = it.style === 'dashed' ? 'sw dashed' : (it.style === 'area' ? 'sw area' : (it.style === 'line' ? 'sw line' : 'sw'));
     const styleAttr = it.style === 'dashed' ? `border-color:${it.color}` : `background:${it.color}`;
     return `<span class="item"><span class="${swClass}" style="${styleAttr}"></span>${it.label}</span>`;
   }).join('');
 }
 
-// ---------- Zweiachsiges Liniendiagramm: Produktion (W) + Globalstrahlung (W/m²) links, Sonnenschein (min) rechts ----------
-function renderIntradayChart(containerId, series, opts={}){
+// ---------- Tagesverlauf: Produktion (links, rot) / Globalstrahlung (rechts) / Sonnenschein (Flaeche, unskaliert, 0-60min = volle Hoehe) ----------
+function renderIntradayChart(containerId, {prodSeries, radSeries, sunSeries}, opts={}){
   const el = document.getElementById(containerId);
   const w = el.clientWidth > 0 ? el.clientWidth : 640;
-  const h = opts.height || 260;
-  const padL = 48, padR = 46, padT = 14, padB = 26;
+  const h = opts.height || 280;
+  const padL = 48, padR = 52, padT = 14, padB = 26;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
   const tMin = opts.windowStart, tMax = opts.windowEnd;
 
-  const leftSeries = series.filter(s => s.axis !== 'right');
-  const rightSeries = series.filter(s => s.axis === 'right');
+  let prodVals = prodSeries.points.map(p=>p.v).filter(v => v!==null && v!==undefined && !isNaN(v));
+  let radVals = radSeries.points.map(p=>p.v).filter(v => v!==null && v!==undefined && !isNaN(v));
 
-  let leftVals = [];
-  leftSeries.forEach(s => s.points.forEach(p => { if (p.v !== null && p.v !== undefined && !isNaN(p.v)) leftVals.push(p.v); }));
-  let rightVals = [];
-  rightSeries.forEach(s => s.points.forEach(p => { if (p.v !== null && p.v !== undefined && !isNaN(p.v)) rightVals.push(p.v); }));
-
-  if (leftVals.length === 0 && rightVals.length === 0){
+  if (prodVals.length === 0 && radVals.length === 0){
     el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
     return;
   }
 
-  let lMin = 0, lMax = Math.max(1, ...leftVals) * 1.08;
-  let rMin = 0, rMax = Math.max(1, ...rightVals) * 1.08;
+  const lMax = Math.max(1, ...prodVals) * 1.08, lMin = 0; // links: Produktion (W)
+  const rMax = Math.max(1, ...radVals) * 1.08, rMin = 0;  // rechts: Globalstrahlung (W/m²)
+  const sunMax = 60, sunMin = 0; // Sonnenschein: fest 0-60 min, unskaliert, keine Achse
 
   const x = t => padL + (tMax === tMin ? plotW/2 : (t - tMin) / (tMax - tMin) * plotW);
   const yL = v => padT + plotH - (v - lMin) / (lMax - lMin) * plotH;
   const yR = v => padT + plotH - (v - rMin) / (rMax - rMin) * plotH;
+  const ySun = v => padT + plotH - (Math.min(v,sunMax) - sunMin) / (sunMax - sunMin) * plotH;
 
   let gridSvg = '';
   const yTicks = 4;
   for (let i=0; i<=yTicks; i++){
     const vL = lMin + (lMax - lMin) * i / yTicks;
+    const vR = rMin + (rMax - rMin) * i / yTicks;
     const yy = yL(vL);
     gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
     gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(vL,0)}</text>`;
-    if (rightVals.length){
-      const vR = rMin + (rMax - rMin) * i / yTicks;
-      gridSvg += `<text x="${w-padR+6}" y="${yy+3}" text-anchor="start" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(vR,0)}</text>`;
-    }
+    gridSvg += `<text x="${w-padR+6}" y="${yy+3}" text-anchor="start" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(vR,0)}</text>`;
   }
 
+  // X-Achse: Uhrzeit-Labels (Zurich-lokal)
   const xTicks = 6;
   let xLabels = '';
   for (let i=0; i<=xTicks; i++){
     const t = tMin + (tMax - tMin) * i / xTicks;
-    xLabels += `<text x="${x(t)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmtTimeUtcIso(new Date(t).toISOString())}</text>`;
+    xLabels += `<line x1="${x(t).toFixed(1)}" y1="${padT+plotH}" x2="${x(t).toFixed(1)}" y2="${padT+plotH+4}" stroke="var(--text-dim)" stroke-width="1"/>`;
+    xLabels += `<text x="${x(t).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmtTimeUtcIso(new Date(t).toISOString())}</text>`;
   }
 
   // Sonnenaufgang / -untergang Marker
-  let sunSvg = '';
+  let sunMarkerSvg = '';
   (opts.sunMarkers||[]).forEach(m => {
     if (m.t === null || m.t === undefined || m.t < tMin || m.t > tMax) return;
     const xx = x(m.t);
-    sunSvg += `<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${padT+plotH}" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="3,3"/>`;
-    sunSvg += `<text x="${xx.toFixed(1)}" y="${padT-4}" text-anchor="middle" font-size="9" font-family="Inter, sans-serif" fill="var(--amber)">${m.label}</text>`;
+    sunMarkerSvg += `<line x1="${xx.toFixed(1)}" y1="${padT}" x2="${xx.toFixed(1)}" y2="${padT+plotH}" stroke="var(--amber)" stroke-width="1.2" stroke-dasharray="3,3"/>`;
+    sunMarkerSvg += `<text x="${xx.toFixed(1)}" y="${padT-4}" text-anchor="middle" font-size="9" font-family="Inter, sans-serif" fill="var(--amber)">${m.label}</text>`;
   });
 
+  // Sonnenschein als helle Flaeche im Hintergrund (unskaliert, keine Achse)
+  let sunAreaSvg = '';
+  const sunPts = sunSeries.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v) && p.t >= tMin && p.t <= tMax)
+    .sort((a,b) => a.t - b.t);
+  if (sunPts.length > 0){
+    const baseline = padT + plotH;
+    let d = `M ${x(sunPts[0].t).toFixed(1)} ${baseline}`;
+    sunPts.forEach(p => { d += ` L ${x(p.t).toFixed(1)} ${ySun(p.v).toFixed(1)}`; });
+    d += ` L ${x(sunPts[sunPts.length-1].t).toFixed(1)} ${baseline} Z`;
+    sunAreaSvg = `<path d="${d}" fill="var(--sun-fill)" opacity="0.75" stroke="none"/>`;
+  }
+
+  // Produktion (links, rot) + Globalstrahlung (rechts)
   let paths = '';
   const allPointTimes = new Set();
-  let markers = '';
-  series.forEach(s => {
-    const yy = s.axis === 'right' ? yR : yL;
+  [{s:prodSeries, yy:yL}, {s:radSeries, yy:yR}].forEach(({s,yy}) => {
     const pts = s.points.filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v) && p.t >= tMin && p.t <= tMax);
     if (pts.length === 0) return;
     const d = pts.map((p,i) => `${i===0 ? 'M' : 'L'} ${x(p.t).toFixed(1)} ${yy(p.v).toFixed(1)}`).join(' ');
     paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     pts.forEach(p => allPointTimes.add(p.t));
   });
+  sunPts.forEach(p => allPointTimes.add(p.t));
 
   el.innerHTML = `<svg class="linechart" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
-    ${gridSvg}${sunSvg}${paths}
+    ${sunAreaSvg}${gridSvg}${xLabels}${sunMarkerSvg}${paths}
   </svg>`;
 
   const svgEl = el.querySelector('svg');
@@ -402,18 +406,24 @@ function renderIntradayChart(containerId, series, opts={}){
     return best;
   }
 
+  function nearestPoint(points, t){
+    let best = null, bestDiff = Infinity;
+    points.forEach(p => {
+      if (p.v === null || p.v === undefined || isNaN(p.v)) return;
+      const diff = Math.abs(p.t - t);
+      if (diff < bestDiff){ bestDiff = diff; best = p; }
+    });
+    return bestDiff <= 40*60*1000 ? best : null;
+  }
+
   function showTooltip(clientX, clientY, t){
-    const rows = series.map(s => {
-      // naechster Punkt dieser Serie zum gewaehlten Zeitpunkt (Serien koennen unterschiedliche Raster haben)
-      let best = null, bestDiff = Infinity;
-      s.points.forEach(p => {
-        if (p.v === null || p.v === undefined || isNaN(p.v)) return;
-        const diff = Math.abs(p.t - t);
-        if (diff < bestDiff){ bestDiff = diff; best = p; }
-      });
-      if (!best || bestDiff > 40*60*1000) return null;
-      return `<div class="tt-row"><span class="tt-sw" style="background:${s.color}"></span>${s.label}: <b style="margin-left:auto">${fmt(best.v,1)} ${s.unit||''}</b></div>`;
-    }).filter(Boolean);
+    const rows = [];
+    const pp = nearestPoint(prodSeries.points, t);
+    if (pp) rows.push(`<div class="tt-row"><span class="tt-sw" style="background:${prodSeries.color}"></span>${prodSeries.label}: <b style="margin-left:auto">${fmt(pp.v,0)} W</b></div>`);
+    const rp = nearestPoint(radSeries.points, t);
+    if (rp) rows.push(`<div class="tt-row"><span class="tt-sw" style="background:${radSeries.color}"></span>${radSeries.label}: <b style="margin-left:auto">${fmt(rp.v,0)} W/m²</b></div>`);
+    const sp = nearestPoint(sunSeries.points, t);
+    if (sp) rows.push(`<div class="tt-row"><span class="tt-sw" style="background:var(--sun-fill)"></span>${sunSeries.label}: <b style="margin-left:auto">${fmt(sp.v,0)} min/h</b></div>`);
     if (rows.length === 0) return;
     tooltip.innerHTML = `<div class="tt-time">${fmtTimeUtcIso(new Date(t).toISOString())} Uhr</div>${rows.join('')}`;
     tooltip.style.display = 'block';
@@ -478,53 +488,51 @@ async function load(){
     document.getElementById('kpiDaylength').innerHTML = summary.day_length !== null
       ? `${decimalHourToHHMM(summary.day_length)} <small>h</small>` : '–';
 
-    // --- Balkendiagramm: Min / Max / Aktuell / Schätzung, Median & Mean als Linien ---
-    const bars = [
-      {label:'Min', value: stats.min, color:'var(--grey-600)'},
-      {label:'Max', value: stats.max, color:'var(--grey-600)'},
-      {label:'Aktuell', value: summary.actual_kwh, color:'var(--yellow)'},
+    // --- Range-Bar: Min-Max als Band, Aktuell/Schätzung/Median/Mean/30-Tage-Schnitt als Linien ---
+    const markers = [
+      {label:'Aktuell', value: summary.actual_kwh, color:'var(--red)'},
       {label:'Schätzung', value: summary.estimate_kwh, color:'var(--blue)'},
-    ];
-    const refLines = [
-      {label:'Median', value: stats.median, color:'var(--purple)'},
-      {label:'Mean', value: stats.mean, color:'var(--teal)'},
+      {label:'Median', value: stats.median, color:'var(--purple)', dash:'5,3'},
+      {label:'Mean', value: stats.mean, color:'var(--teal)', dash:'2,3'},
+      {label:'Schnitt 30 Tage', value: stats.avg30, color:'var(--yellow)', dash:'6,2'},
     ];
     renderLegend('legendBar', [
-      {label:`Min/Max (n=${stats.count||0} Jahre)`, color:'var(--grey-600)'},
-      {label:'Aktuell', color:'var(--yellow)'},
+      {label:`Min–Max Band (n=${stats.count||0} Jahre)`, color:'var(--blue)'},
+      {label:'Aktuell', color:'var(--red)'},
       {label:'Schätzung', color:'var(--blue)'},
       {label:'Median', color:'var(--purple)', style:'dashed'},
       {label:'Mean', color:'var(--teal)', style:'dashed'},
+      {label:`Schnitt 30 Tage (±15d, n=${stats.avg30_count||0})`, color:'var(--yellow)', style:'dashed'},
     ]);
-    renderBarChart('chartBar', bars, refLines, {height: 260});
+    renderRangeBar('chartBar', {min: stats.min, max: stats.max}, markers, {height: 300});
 
     // --- Tagesverlauf ---
     const { startUtc, endUtc } = zurichDayRangeUtc(selectedDate);
     const windowStart = startUtc.getTime(), windowEnd = endUtc.getTime();
 
     const prodSeries = {
-      label:'Produktion', unit:'W', color:'#d4a900', axis:'left',
+      label:'Produktion', color:'var(--red)',
       points: intraday.production.map(p => ({ t: toUtcMs(p.timestamp), v: p.pv_generation })),
     };
     const radSeries = {
-      label:'Globalstrahlung', unit:'W/m²', color:'#1f6feb', axis:'left',
+      label:'Globalstrahlung', color:'var(--blue)',
       points: intraday.meteo.map(p => ({ t: toUtcMs(p.obs_datetime), v: p.radiation_wm2 })),
     };
     const sunSeries = {
-      label:'Sonnenschein', unit:'min/h', color:'#1f9d55', axis:'right',
+      label:'Sonnenschein',
       points: intraday.meteo.map(p => ({ t: toUtcMs(p.obs_datetime), v: p.sunshine_min })),
     };
     renderLegend('legendIntraday', [
-      {label:'Produktion (W, links)', color:prodSeries.color},
-      {label:'Globalstrahlung (W/m², links)', color:radSeries.color},
-      {label:'Sonnenschein (min/h, rechts)', color:sunSeries.color},
+      {label:'Produktion (W, links)', color:'var(--red)'},
+      {label:'Globalstrahlung (W/m², rechts)', color:'var(--blue)'},
+      {label:'Sonnenschein (Fläche, unskaliert)', color:'var(--sun-fill)', style:'area'},
       {label:'Sonnenauf-/-untergang', color:'var(--amber)', style:'dashed'},
     ]);
 
     const sunriseT = decimalHourToUtcMs(selectedDate, summary.sunrise);
     const sunsetT = decimalHourToUtcMs(selectedDate, summary.sunset);
 
-    renderIntradayChart('chartIntraday', [prodSeries, radSeries, sunSeries], {
+    renderIntradayChart('chartIntraday', {prodSeries, radSeries, sunSeries}, {
       height: 280, windowStart, windowEnd,
       sunMarkers: [
         {t: sunriseT, label:'Aufgang'},
