@@ -70,6 +70,28 @@ function circularDayDiff(a, b, yearLen = 365) {
   return Math.min(diff, yearLen - diff);
 }
 
+async function handleDayLengthYear(url, env, origin) {
+  const date = url.searchParams.get("date");
+  if (!isValidDate(date)) return json({ error: "invalid or missing date" }, origin, 400);
+
+  const centerDoy = dayOfYear(date);
+
+  const rows = await env.DB_ENERGY
+    .prepare(`SELECT day_year, day_length FROM solar_reference_daily ORDER BY day_year`)
+    .all();
+  const byDoy = {};
+  rows.results.forEach((r) => { byDoy[r.day_year] = r.day_length; });
+  const totalDays = rows.results.length || 365;
+
+  const series = [];
+  for (let offset = -182; offset <= 182; offset++) {
+    const doy = ((centerDoy - 1 + offset) % totalDays + totalDays) % totalDays + 1;
+    series.push({ offset, day_year: doy, day_length: byDoy[doy] ?? null });
+  }
+
+  return json({ date, center_day_year: centerDoy, series }, origin);
+}
+
 async function handleDaySummary(url, env, origin) {
   const date = url.searchParams.get("date");
   if (!isValidDate(date)) return json({ error: "invalid or missing date" }, origin, 400);
@@ -111,7 +133,7 @@ async function handleDayStats(url, env, origin) {
 
   const rows = await env.DB_ENERGY
     .prepare(
-      `SELECT Date_ISO, Production_kWh FROM solarmanager_data
+      `SELECT Date_ISO, Date_Display, Production_kWh FROM solarmanager_data
        WHERE strftime('%m-%d', Date_ISO) = ?
          AND Production_kWh IS NOT NULL
        ORDER BY Production_kWh`
@@ -121,13 +143,13 @@ async function handleDayStats(url, env, origin) {
 
   const values = rows.results.map((r) => r.Production_kWh);
   if (values.length === 0) {
-    return json({ date, month_day: md, count: 0, min: null, max: null, minYear: null, maxYear: null, median: null, mean: null, avg30: null, avg30_count: 0 }, origin);
+    return json({ date, month_day: md, count: 0, min: null, max: null, minDate: null, maxDate: null, median: null, mean: null, avg30: null, avg30_count: 0 }, origin);
   }
 
   const min = values[0];
-  const minYear = parseInt(rows.results[0].Date_ISO.slice(0, 4), 10);
+  const minDate = rows.results[0].Date_Display || rows.results[0].Date_ISO;
   const max = values[values.length - 1];
-  const maxYear = parseInt(rows.results[rows.results.length - 1].Date_ISO.slice(0, 4), 10);
+  const maxDate = rows.results[rows.results.length - 1].Date_Display || rows.results[rows.results.length - 1].Date_ISO;
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const med = median(values);
 
@@ -158,13 +180,14 @@ async function handleDayStats(url, env, origin) {
       month_day: md,
       count: values.length,
       min,
-      minYear,
+      minDate,
       max,
-      maxYear,
+      maxDate,
       median: med,
       mean,
       avg30,
       avg30_count: windowValues.length,
+      avg30_scanned: allRows.results.length, // diagnostic: total rows scanned before the +/-15d filter
     },
     origin
   );
@@ -224,6 +247,7 @@ export default {
       if (url.pathname === "/api/day-summary") return await handleDaySummary(url, env, origin);
       if (url.pathname === "/api/day-stats") return await handleDayStats(url, env, origin);
       if (url.pathname === "/api/day-intraday") return await handleDayIntraday(url, env, origin);
+      if (url.pathname === "/api/day-length-year") return await handleDayLengthYear(url, env, origin);
 
       return json({ error: "not found" }, origin, 404);
     } catch (err) {
