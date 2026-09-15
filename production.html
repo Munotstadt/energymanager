@@ -23,6 +23,7 @@
     --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
     --grid:#e8e8e8;
     --sun-fill:#fff3b0;
+    --bar-yellow:#FFD400;
   }
   *{box-sizing:border-box;}
   body{
@@ -168,6 +169,10 @@
             <div class="value" id="kpiDaylength">–</div>
           </div>
         </div>
+        <div class="card" style="margin-top:12px;">
+          <div style="font-size:0.72rem; color:var(--text-dim); margin-bottom:6px;">Tageslänge, ±182 Tage um den gewählten Tag</div>
+          <div id="chartDaylength"></div>
+        </div>
       </div>
       <div class="col-right">
         <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
@@ -254,7 +259,7 @@ function renderRangeBar(containerId, data, opts={}){
   const padL = 44, padR = 110, padT = 18, padB = 26;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
-  const { min, minYear, max, maxYear, actual, planwert, median, mean, avg30 } = data;
+  const { min, minDate, max, maxDate, actual, planwert, median, mean, avg30 } = data;
   const allVals = [min, max, actual, planwert, median, mean, avg30].filter(v => v !== null && v !== undefined && !isNaN(v));
   if (allVals.length === 0){
     el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
@@ -281,7 +286,7 @@ function renderRangeBar(containerId, data, opts={}){
   let barSvg = `<rect x="${bx0.toFixed(1)}" y="${padT}" width="${barW}" height="${plotH}" rx="4" fill="var(--grey-100)"/>`;
   if (actual !== null && actual !== undefined && !isNaN(actual)){
     const yAct = y(actual);
-    barSvg += `<rect x="${bx0.toFixed(1)}" y="${yAct.toFixed(1)}" width="${barW}" height="${(padT+plotH-yAct).toFixed(1)}" rx="4" fill="var(--yellow)"/>`;
+    barSvg += `<rect x="${bx0.toFixed(1)}" y="${yAct.toFixed(1)}" width="${barW}" height="${(padT+plotH-yAct).toFixed(1)}" rx="4" fill="var(--bar-yellow)"/>`;
     if (max !== null && max !== undefined && !isNaN(max) && max > actual){
       const yMax = y(max);
       barSvg += `<rect x="${bx0.toFixed(1)}" y="${yMax.toFixed(1)}" width="${barW}" height="${(yAct-yMax).toFixed(1)}" fill="var(--grey-300)"/>`;
@@ -303,8 +308,8 @@ function renderRangeBar(containerId, data, opts={}){
   }
 
   let markerSvg = '';
-  markerSvg += markerLine(max, 'var(--ink)', `Max ${fmt(max,1)} (${maxYear ?? '–'})`);
-  markerSvg += markerLine(min, 'var(--ink)', `Min ${fmt(min,1)} (${minYear ?? '–'})`);
+  markerSvg += markerLine(max, 'var(--ink)', `Max ${fmt(max,1)} (${maxDate ?? '–'})`);
+  markerSvg += markerLine(min, 'var(--ink)', `Min ${fmt(min,1)} (${minDate ?? '–'})`);
   markerSvg += markerLine(avg30, 'var(--teal)', `Schnitt 30T ${fmt(avg30,1)}`, '6,2');
   markerSvg += markerLine(mean, 'var(--purple)', `Mean ${fmt(mean,1)}`, '2,3');
   markerSvg += markerLine(median, 'var(--blue)', `Median ${fmt(median,1)}`, '5,3');
@@ -313,6 +318,60 @@ function renderRangeBar(containerId, data, opts={}){
 
   el.innerHTML = `<svg class="rangebar" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
     ${gridSvg}${barSvg}${markerSvg}
+  </svg>`;
+}
+
+// ---------- Tageslaenge ueber 365 Tage (zentriert auf den gewaehlten Tag) ----------
+function renderDaylengthChart(containerId, series, centerDate, opts={}){
+  const el = document.getElementById(containerId);
+  const w = el.clientWidth > 0 ? el.clientWidth : 320;
+  const h = opts.height || 160;
+  const padL = 38, padR = 10, padT = 10, padB = 22;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  const vals = series.map(p => p.day_length).filter(v => v !== null && v !== undefined && !isNaN(v));
+  if (vals.length === 0){
+    el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:20px 0; text-align:center;">Keine Daten.</div>`;
+    return;
+  }
+  const vMin = 0, vMax = Math.max(...vals) * 1.1;
+  const oMin = series[0].offset, oMax = series[series.length-1].offset;
+
+  const x = o => padL + (o - oMin) / (oMax - oMin) * plotW;
+  const y = v => padT + plotH - (v - vMin) / (vMax - vMin) * plotH;
+
+  let gridSvg = '';
+  const yTicks = 3;
+  for (let i=0; i<=yTicks; i++){
+    const v = vMin + (vMax - vMin) * i / yTicks;
+    const yy = y(v);
+    gridSvg += `<line x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}h</text>`;
+  }
+
+  // X-Achsen-Labels: Kalenderdatum an ein paar Stuetzstellen
+  let xLabels = '';
+  [oMin, Math.round(oMin/2), 0, Math.round(oMax/2), oMax].forEach(o => {
+    const d = new Date(centerDate + 'T12:00:00');
+    d.setDate(d.getDate() + o);
+    const label = d.toLocaleDateString('de-CH', {day:'2-digit', month:'2-digit'});
+    xLabels += `<text x="${x(o).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${label}</text>`;
+  });
+
+  const pts = series.filter(p => p.day_length !== null && p.day_length !== undefined);
+  const d = pts.map((p,i) => `${i===0?'M':'L'} ${x(p.offset).toFixed(1)} ${y(p.day_length).toFixed(1)}`).join(' ');
+  let pathSvg = `<path d="${d}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round"/>`;
+
+  // Markierung: gewaehlter Tag (offset 0)
+  const cx = x(0);
+  let centerSvg = `<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${padT+plotH}" stroke="var(--red)" stroke-width="1.5" stroke-dasharray="3,3"/>`;
+  const centerPt = series.find(p => p.offset === 0);
+  if (centerPt && centerPt.day_length !== null){
+    centerSvg += `<circle cx="${cx.toFixed(1)}" cy="${y(centerPt.day_length).toFixed(1)}" r="3.5" fill="var(--red)"/>`;
+  }
+
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
+    ${gridSvg}${xLabels}${pathSvg}${centerSvg}
   </svg>`;
 }
 
@@ -490,10 +549,11 @@ async function load(){
   document.getElementById('status').textContent = 'Lade Daten...';
   document.getElementById('content').style.display = 'none';
   try{
-    const [summary, stats, intraday] = await Promise.all([
+    const [summary, stats, intraday, daylengthYear] = await Promise.all([
       fetchJson('day-summary', {date: selectedDate}),
       fetchJson('day-stats', {date: selectedDate}),
       fetchJson('day-intraday', {date: selectedDate}),
+      fetchJson('day-length-year', {date: selectedDate}),
     ]);
 
     document.getElementById('status').style.display = 'none';
@@ -508,20 +568,23 @@ async function load(){
     document.getElementById('kpiDaylength').innerHTML = summary.day_length !== null
       ? `${decimalHourToHHMM(summary.day_length)} <small>h</small>` : '–';
 
-    // --- Bar-Chart: 0->Aktuell gelb, Aktuell->Max grau, Min/Max schwarz mit Jahr ---
+    renderDaylengthChart('chartDaylength', daylengthYear.series, selectedDate, {height: 160});
+
+    // --- Bar-Chart: 0->Aktuell gelb, Aktuell->Max grau, Min/Max schwarz mit Datum ---
+    console.info('day-stats avg30 diagnostics:', {avg30: stats.avg30, avg30_count: stats.avg30_count, avg30_scanned: stats.avg30_scanned});
     renderLegend('legendBar', [
-      {label:'0–Aktuell', color:'var(--yellow)'},
+      {label:'0–Aktuell', color:'var(--bar-yellow)'},
       {label:'Aktuell–Max', color:'var(--grey-300)'},
       {label:'Aktuell', color:'var(--red)'},
       {label:'Planwert', color:'var(--blue)'},
-      {label:'Min/Max (Jahr)', color:'var(--ink)'},
+      {label:'Min/Max (Datum)', color:'var(--ink)'},
       {label:'Median', color:'var(--blue)', style:'dashed'},
       {label:'Mean', color:'var(--purple)', style:'dashed'},
       {label:`Schnitt 30 Tage (±15d, n=${stats.avg30_count||0})`, color:'var(--teal)', style:'dashed'},
     ]);
     renderRangeBar('chartBar', {
-      min: stats.min, minYear: stats.minYear,
-      max: stats.max, maxYear: stats.maxYear,
+      min: stats.min, minDate: stats.minDate,
+      max: stats.max, maxDate: stats.maxDate,
       actual: summary.actual_kwh,
       planwert: summary.estimate_kwh,
       median: stats.median,
