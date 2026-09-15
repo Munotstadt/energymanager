@@ -80,6 +80,9 @@
     background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
     padding:16px 18px 12px; margin-bottom:6px;
   }
+  .top-row{display:flex; gap:16px; align-items:stretch; flex-wrap:wrap;}
+  .top-row .col-left{flex:1 1 320px; min-width:280px;}
+  .top-row .col-right{flex:1 1 300px; min-width:280px;}
 
   .kpi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
   .kpi{
@@ -91,6 +94,10 @@
   .kpi .value small{font-size:0.68rem; color:var(--text-dim); font-weight:400;}
 
   .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
+  .legend.legend-footer{
+    margin:10px 0 4px; padding-top:8px; border-top:1px solid var(--grey-100);
+    font-size:0.7rem; gap:10px;
+  }
   .legend .item{display:flex; align-items:center; gap:5px;}
   .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
   .legend .sw.line{border-radius:0; height:2px; width:14px; margin-top:4px;}
@@ -144,26 +151,31 @@
   <div id="status">Lade Daten...</div>
   <div id="content" style="display:none;">
 
-    <h2>Sonnenstand</h2>
-    <div class="kpi-grid">
-      <div class="kpi" style="border-left-color:var(--amber);">
-        <div class="label">Sonnenaufgang</div>
-        <div class="value" id="kpiSunrise">–</div>
+    <div class="top-row">
+      <div class="col-left">
+        <h2>Sonnenstand</h2>
+        <div class="kpi-grid">
+          <div class="kpi" style="border-left-color:var(--amber);">
+            <div class="label">Sonnenaufgang</div>
+            <div class="value" id="kpiSunrise">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--purple);">
+            <div class="label">Sonnenuntergang</div>
+            <div class="value" id="kpiSunset">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--teal);">
+            <div class="label">Tageslänge</div>
+            <div class="value" id="kpiDaylength">–</div>
+          </div>
+        </div>
       </div>
-      <div class="kpi" style="border-left-color:var(--purple);">
-        <div class="label">Sonnenuntergang</div>
-        <div class="value" id="kpiSunset">–</div>
+      <div class="col-right">
+        <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
+        <div class="card">
+          <div id="chartBar"></div>
+          <div class="legend legend-footer" id="legendBar"></div>
+        </div>
       </div>
-      <div class="kpi" style="border-left-color:var(--teal);">
-        <div class="label">Tageslänge</div>
-        <div class="value" id="kpiDaylength">–</div>
-      </div>
-    </div>
-
-    <h2>Produktion im Vergleich <span class="hint">kWh, historisch für diesen Kalendertag</span></h2>
-    <div class="card">
-      <div class="legend" id="legendBar"></div>
-      <div id="chartBar"></div>
     </div>
 
     <h2>Tagesverlauf <span class="hint">Produktion, Globalstrahlung &amp; Sonnenschein</span></h2>
@@ -234,19 +246,16 @@ async function fetchJson(path, params){
   return res.json();
 }
 
-// ---------- Vertikale Range-Bar: EIN Balken (Min-Max), mit Marker-Linien fuer Aktuell/Schaetzung/Median/Mean/30-Tage-Schnitt ----------
-function renderRangeBar(containerId, range, markers, opts={}){
+// ---------- Vertikale Bar: 0->Aktuell (gelb), Aktuell->Max (grau), Min/Max als schwarze Linien mit Jahr, Aktuell als rote Linie ----------
+function renderRangeBar(containerId, data, opts={}){
   const el = document.getElementById(containerId);
   const w = el.clientWidth > 0 ? el.clientWidth : 320;
-  const h = opts.height || 280;
-  const padL = 46, padR = 130, padT = 18, padB = 26;
+  const h = opts.height || 300;
+  const padL = 44, padR = 110, padT = 18, padB = 26;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
-  const allVals = [
-    range.min, range.max,
-    ...markers.filter(m => m.value !== null && m.value !== undefined && !isNaN(m.value)).map(m => m.value),
-  ].filter(v => v !== null && v !== undefined && !isNaN(v));
-
+  const { min, minYear, max, maxYear, actual, planwert, median, mean, avg30 } = data;
+  const allVals = [min, max, actual, planwert, median, mean, avg30].filter(v => v !== null && v !== undefined && !isNaN(v));
   if (allVals.length === 0){
     el.innerHTML = `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">Keine Daten für diesen Tag.</div>`;
     return;
@@ -255,8 +264,9 @@ function renderRangeBar(containerId, range, markers, opts={}){
   const scaleMin = 0;
 
   const y = v => padT + plotH - (v - scaleMin) / (scaleMax - scaleMin) * plotH;
-  const barCx = padL + plotW * 0.28;
-  const barW = Math.min(70, plotW * 0.4);
+  const barCx = padL + plotW * 0.32;
+  const barW = Math.min(80, plotW * 0.45);
+  const bx0 = barCx - barW/2, bx1 = barCx + barW/2;
 
   let gridSvg = '';
   const yTicks = 5;
@@ -267,29 +277,39 @@ function renderRangeBar(containerId, range, markers, opts={}){
     gridSvg += `<text x="${padL-8}" y="${yy+3}" text-anchor="end" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,0)}</text>`;
   }
 
-  // Hintergrund-Track (0 -> scaleMax) + hervorgehobenes Min-Max-Band
-  let barSvg = `<rect x="${(barCx-barW/2).toFixed(1)}" y="${padT}" width="${barW}" height="${plotH}" rx="4" fill="var(--grey-100)"/>`;
-  if (range.min !== null && range.max !== null){
-    const yTop = y(range.max), yBot = y(range.min);
-    barSvg += `<rect x="${(barCx-barW/2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW}" height="${(yBot-yTop).toFixed(1)}" rx="4" fill="var(--blue)" opacity="0.35"/>`;
-    barSvg += `<text x="${barCx}" y="${(yTop-8).toFixed(1)}" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--blue)">Max ${fmt(range.max,1)}</text>`;
-    barSvg += `<text x="${barCx}" y="${(yBot+14).toFixed(1)}" text-anchor="middle" font-size="9.5" font-family="IBM Plex Mono, monospace" fill="var(--blue)">Min ${fmt(range.min,1)}</text>`;
+  // Saeule: Hintergrund-Track, 0->Aktuell gelb, Aktuell->Max hellgrau
+  let barSvg = `<rect x="${bx0.toFixed(1)}" y="${padT}" width="${barW}" height="${plotH}" rx="4" fill="var(--grey-100)"/>`;
+  if (actual !== null && actual !== undefined && !isNaN(actual)){
+    const yAct = y(actual);
+    barSvg += `<rect x="${bx0.toFixed(1)}" y="${yAct.toFixed(1)}" width="${barW}" height="${(padT+plotH-yAct).toFixed(1)}" rx="4" fill="var(--yellow)"/>`;
+    if (max !== null && max !== undefined && !isNaN(max) && max > actual){
+      const yMax = y(max);
+      barSvg += `<rect x="${bx0.toFixed(1)}" y="${yMax.toFixed(1)}" width="${barW}" height="${(yAct-yMax).toFixed(1)}" fill="var(--grey-300)"/>`;
+    }
   }
 
-  // Marker-Linien quer durch die Bar, Labels rechts daneben (gestaffelt gegen Ueberlappung)
-  const tickX1 = barCx - barW/2 - 6, tickX2 = barCx + barW/2 + 6;
+  // Marker-Linien (quer durch/über die Saeule hinaus), Labels rechts
+  const tickX1 = bx0 - 6, tickX2 = bx1 + 6;
   const placed = [];
+  function markerLine(value, color, label, dash){
+    if (value === null || value === undefined || isNaN(value)) return '';
+    let yy = y(value);
+    let labelY = yy;
+    while (placed.some(p => Math.abs(p - labelY) < 13)) labelY += 13;
+    placed.push(labelY);
+    const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
+    return `<line x1="${tickX1.toFixed(1)}" y1="${yy.toFixed(1)}" x2="${tickX2.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="${color}" stroke-width="2"${dashAttr}/>`
+      + `<text x="${(tickX2+8).toFixed(1)}" y="${(labelY+3).toFixed(1)}" font-size="10" font-family="IBM Plex Mono, monospace" fill="${color}">${label}</text>`;
+  }
+
   let markerSvg = '';
-  markers.forEach(m => {
-    if (m.value === null || m.value === undefined || isNaN(m.value)) return;
-    let yy = y(m.value);
-    // simple vertical de-collision for label rows
-    while (placed.some(p => Math.abs(p - yy) < 14)) yy += 14;
-    placed.push(yy);
-    const dash = m.dash ? ` stroke-dasharray="${m.dash}"` : '';
-    markerSvg += `<line x1="${tickX1.toFixed(1)}" y1="${y(m.value).toFixed(1)}" x2="${tickX2.toFixed(1)}" y2="${y(m.value).toFixed(1)}" stroke="${m.color}" stroke-width="2"${dash}/>`;
-    markerSvg += `<text x="${(tickX2+8).toFixed(1)}" y="${(yy+3).toFixed(1)}" font-size="10" font-family="IBM Plex Mono, monospace" fill="${m.color}">${m.label} ${fmt(m.value,1)}</text>`;
-  });
+  markerSvg += markerLine(max, 'var(--ink)', `Max ${fmt(max,1)} (${maxYear ?? '–'})`);
+  markerSvg += markerLine(min, 'var(--ink)', `Min ${fmt(min,1)} (${minYear ?? '–'})`);
+  markerSvg += markerLine(avg30, 'var(--teal)', `Schnitt 30T ${fmt(avg30,1)}`, '6,2');
+  markerSvg += markerLine(mean, 'var(--purple)', `Mean ${fmt(mean,1)}`, '2,3');
+  markerSvg += markerLine(median, 'var(--blue)', `Median ${fmt(median,1)}`, '5,3');
+  markerSvg += markerLine(planwert, 'var(--blue)', `Planwert ${fmt(planwert,1)}`);
+  markerSvg += markerLine(actual, 'var(--red)', `Aktuell ${fmt(actual,1)}`);
 
   el.innerHTML = `<svg class="rangebar" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">
     ${gridSvg}${barSvg}${markerSvg}
@@ -488,23 +508,26 @@ async function load(){
     document.getElementById('kpiDaylength').innerHTML = summary.day_length !== null
       ? `${decimalHourToHHMM(summary.day_length)} <small>h</small>` : '–';
 
-    // --- Range-Bar: Min-Max als Band, Aktuell/Schätzung/Median/Mean/30-Tage-Schnitt als Linien ---
-    const markers = [
-      {label:'Aktuell', value: summary.actual_kwh, color:'var(--red)'},
-      {label:'Schätzung', value: summary.estimate_kwh, color:'var(--blue)'},
-      {label:'Median', value: stats.median, color:'var(--purple)', dash:'5,3'},
-      {label:'Mean', value: stats.mean, color:'var(--teal)', dash:'2,3'},
-      {label:'Schnitt 30 Tage', value: stats.avg30, color:'var(--yellow)', dash:'6,2'},
-    ];
+    // --- Bar-Chart: 0->Aktuell gelb, Aktuell->Max grau, Min/Max schwarz mit Jahr ---
     renderLegend('legendBar', [
-      {label:`Min–Max Band (n=${stats.count||0} Jahre)`, color:'var(--blue)'},
+      {label:'0–Aktuell', color:'var(--yellow)'},
+      {label:'Aktuell–Max', color:'var(--grey-300)'},
       {label:'Aktuell', color:'var(--red)'},
-      {label:'Schätzung', color:'var(--blue)'},
-      {label:'Median', color:'var(--purple)', style:'dashed'},
-      {label:'Mean', color:'var(--teal)', style:'dashed'},
-      {label:`Schnitt 30 Tage (±15d, n=${stats.avg30_count||0})`, color:'var(--yellow)', style:'dashed'},
+      {label:'Planwert', color:'var(--blue)'},
+      {label:'Min/Max (Jahr)', color:'var(--ink)'},
+      {label:'Median', color:'var(--blue)', style:'dashed'},
+      {label:'Mean', color:'var(--purple)', style:'dashed'},
+      {label:`Schnitt 30 Tage (±15d, n=${stats.avg30_count||0})`, color:'var(--teal)', style:'dashed'},
     ]);
-    renderRangeBar('chartBar', {min: stats.min, max: stats.max}, markers, {height: 300});
+    renderRangeBar('chartBar', {
+      min: stats.min, minYear: stats.minYear,
+      max: stats.max, maxYear: stats.maxYear,
+      actual: summary.actual_kwh,
+      planwert: summary.estimate_kwh,
+      median: stats.median,
+      mean: stats.mean,
+      avg30: stats.avg30,
+    }, {height: 300});
 
     // --- Tagesverlauf ---
     const { startUtc, endUtc } = zurichDayRangeUtc(selectedDate);
