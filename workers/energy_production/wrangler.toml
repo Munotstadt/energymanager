@@ -1,4 +1,4 @@
-name = "energy_production"
+name = "energy-production"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
