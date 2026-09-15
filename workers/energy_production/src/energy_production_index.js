@@ -111,7 +111,7 @@ async function handleDayStats(url, env, origin) {
 
   const rows = await env.DB_ENERGY
     .prepare(
-      `SELECT Production_kWh FROM solarmanager_data
+      `SELECT Date_ISO, Production_kWh FROM solarmanager_data
        WHERE strftime('%m-%d', Date_ISO) = ?
          AND Production_kWh IS NOT NULL
        ORDER BY Production_kWh`
@@ -121,11 +121,13 @@ async function handleDayStats(url, env, origin) {
 
   const values = rows.results.map((r) => r.Production_kWh);
   if (values.length === 0) {
-    return json({ date, month_day: md, count: 0, min: null, max: null, median: null, mean: null }, origin);
+    return json({ date, month_day: md, count: 0, min: null, max: null, minYear: null, maxYear: null, median: null, mean: null, avg30: null, avg30_count: 0 }, origin);
   }
 
   const min = values[0];
+  const minYear = parseInt(rows.results[0].Date_ISO.slice(0, 4), 10);
   const max = values[values.length - 1];
+  const maxYear = parseInt(rows.results[rows.results.length - 1].Date_ISO.slice(0, 4), 10);
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const med = median(values);
 
@@ -156,7 +158,9 @@ async function handleDayStats(url, env, origin) {
       month_day: md,
       count: values.length,
       min,
+      minYear,
       max,
+      maxYear,
       median: med,
       mean,
       avg30,
