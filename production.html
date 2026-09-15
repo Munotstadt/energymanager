@@ -189,6 +189,40 @@
       <div id="chartIntraday"></div>
     </div>
 
+    <h2>Validierungstabelle <span class="hint" id="tableHint">letzte 90 Tage</span></h2>
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <div class="date-picker">
+          <label for="rangeFrom">Von</label>
+          <input type="date" id="rangeFrom">
+        </div>
+        <div class="date-picker">
+          <label for="rangeTo">Bis</label>
+          <input type="date" id="rangeTo">
+        </div>
+        <button type="button" class="refresh-btn" id="rangeApplyBtn" style="padding:6px 14px; font-size:0.78rem;">Anwenden</button>
+        <span style="font-size:0.72rem; color:var(--text-dim); margin-left:auto;" id="formulaInfo"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="dataTable" style="width:100%; border-collapse:collapse; font-family:'IBM Plex Mono',monospace; font-size:0.78rem;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--ink); text-align:right;">
+              <th style="text-align:left; padding:6px 8px;">Datum</th>
+              <th style="padding:6px 8px;">Produktion</th>
+              <th style="padding:6px 8px;">Planwert</th>
+              <th style="padding:6px 8px;">Validation</th>
+              <th style="padding:6px 8px;">Globalstrahlung</th>
+              <th style="padding:6px 8px;">Schneedecke</th>
+              <th style="padding:6px 8px;">Varianz</th>
+              <th style="padding:6px 8px;">Varianz30d</th>
+            </tr>
+          </thead>
+          <tbody id="dataTableBody"></tbody>
+        </table>
+      </div>
+      <div id="tableError" style="color:var(--red); font-size:0.75rem; margin-top:8px; display:none;"></div>
+    </div>
+
   </div>
   <div class="footer" id="footerInfo">Datenquelle: energy_production-api</div>
 </div>
@@ -531,7 +565,66 @@ document.addEventListener('click', () => {
   if (tt) tt.style.display = 'none';
 });
 
-// Zurich-Kalendertag -> UTC-Fenster (fuer Chart-Achsen)
+// ---------- Validierungstabelle ----------
+function varianceColor(v, scaleAbs){
+  if (v === null || v === undefined || isNaN(v)) return '';
+  const intensity = Math.min(1, Math.abs(v) / scaleAbs);
+  const alpha = (intensity * 0.55).toFixed(2);
+  return `background:rgba(227,6,19,${alpha});`;
+}
+
+function renderDataTable(rows){
+  const tbody = document.getElementById('dataTableBody');
+  if (!rows.length){
+    tbody.innerHTML = `<tr><td colspan="8" style="padding:16px; text-align:center; color:var(--text-dim);">Keine Daten im gewählten Zeitraum.</td></tr>`;
+    return;
+  }
+  // Skala fuer die Rot-Einfaerbung: 95. Perzentil des absoluten Varianzwertes in der aktuellen Tabelle
+  const absVariances = rows.map(r => r.variance).filter(v => v !== null && v !== undefined && !isNaN(v)).map(Math.abs).sort((a,b)=>a-b);
+  const absVariances30 = rows.map(r => r.variance30d).filter(v => v !== null && v !== undefined && !isNaN(v)).map(Math.abs).sort((a,b)=>a-b);
+  const pct = (arr) => arr.length ? arr[Math.floor(arr.length*0.95)] || arr[arr.length-1] : 1;
+  const scaleVar = pct(absVariances) || 1;
+  const scaleVar30 = pct(absVariances30) || 1;
+
+  tbody.innerHTML = rows.slice().reverse().map(r => {
+    const dLabel = new Date(r.date + 'T12:00:00').toLocaleDateString('de-CH', {day:'2-digit', month:'2-digit', year:'numeric'});
+    return `<tr style="border-bottom:1px solid var(--grey-100);">
+      <td style="text-align:left; padding:5px 8px;">${dLabel}</td>
+      <td style="text-align:right; padding:5px 8px;">${fmt(r.production,1)}</td>
+      <td style="text-align:right; padding:5px 8px;">${fmt(r.planwert,1)}</td>
+      <td style="text-align:right; padding:5px 8px;">${fmt(r.validation,1)}</td>
+      <td style="text-align:right; padding:5px 8px;">${fmt(r.globalstrahlung,0)}</td>
+      <td style="text-align:right; padding:5px 8px;">${fmt(r.schneedecke,1)}</td>
+      <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance, scaleVar)}">${fmt(r.variance,1)}</td>
+      <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance30d, scaleVar30)}">${fmt(r.variance30d,1)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadTable(fromStr, toStr){
+  const tableError = document.getElementById('tableError');
+  tableError.style.display = 'none';
+  document.getElementById('dataTableBody').innerHTML = `<tr><td colspan="8" style="padding:16px; text-align:center; color:var(--text-dim);">Lade...</td></tr>`;
+  try{
+    const data = await fetchJson('day-table', {from: fromStr, to: toStr});
+    renderDataTable(data.rows || []);
+    document.getElementById('tableHint').textContent = `${fromStr} – ${toStr}`;
+    const f = data.formula || {};
+    document.getElementById('formulaInfo').textContent = f.updated_at
+      ? `Formel: x=${fmt(f.x,4)}, Globalstrahlung=${fmt(f.coef_globalstrahlung,4)}, Schneedecke=${fmt(f.coef_schneedecke,4)} · Stand ${f.updated_at}`
+      : '';
+    if (data.snow_query_error){
+      tableError.style.display = 'block';
+      tableError.textContent = `Schneedecke-Abfrage fehlgeschlagen: ${data.snow_query_error}`;
+    }
+  } catch(e){
+    document.getElementById('dataTableBody').innerHTML = '';
+    tableError.style.display = 'block';
+    tableError.textContent = `Fehler beim Laden der Tabelle: ${e.message}`;
+  }
+}
+
+// ---------- Zurich-Kalendertag -> UTC-Fenster (fuer Chart-Achsen) ----------
 function zurichDayRangeUtc(dateStr){
   const approx = new Date(dateStr + 'T00:00:00Z');
   const utc = new Date(approx.toLocaleString('en-US', {timeZone:'UTC'}));
@@ -648,7 +741,26 @@ document.getElementById('yesterdayBtn').addEventListener('click', () => {
   load();
 });
 
+// --- Validierungstabelle: Default letzte 90 Tage, Range anpassbar ---
+const rangeFromInput = document.getElementById('rangeFrom');
+const rangeToInput = document.getElementById('rangeTo');
+const defaultRangeTo = zurichYesterdayStr();
+const defaultRangeFrom = (() => {
+  const d = new Date(defaultRangeTo + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 89);
+  return d.toISOString().slice(0,10);
+})();
+rangeFromInput.max = zurichTodayStr();
+rangeToInput.max = zurichTodayStr();
+rangeFromInput.value = defaultRangeFrom;
+rangeToInput.value = defaultRangeTo;
+document.getElementById('rangeApplyBtn').addEventListener('click', () => {
+  if (!rangeFromInput.value || !rangeToInput.value) return;
+  loadTable(rangeFromInput.value, rangeToInput.value);
+});
+
 load();
+loadTable(defaultRangeFrom, defaultRangeTo);
 </script>
   <script src="https://munotstadt.github.io/db_admin/assets/improvements-button.js" data-app="energymanager" data-position="left"></script>
 </body>
