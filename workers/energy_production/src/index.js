@@ -181,7 +181,7 @@ async function handleDayTable(url, env, origin) {
     const schneedecke = snowByDate[d] ?? null;
     let validation = null;
     if (globalstrahlung !== null && schneedecke !== null && coefRad !== null && coefSnow !== null && coefX !== null) {
-      validation = globalstrahlung * coefRad + schneedecke * coefSnow + coefX;
+      validation = (globalstrahlung * coefRad + schneedecke * coefSnow + coefX) / 1000;
     }
     validationByDate[d] = validation;
     varianceByDate[d] = (production !== null && validation !== null) ? production - validation : null;
