@@ -92,6 +92,19 @@ async function handleDayLengthYear(url, env, origin) {
   return json({ date, center_day_year: centerDoy, series }, origin);
 }
 
+function isLeapYear(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+
+// Datum um N Jahre verschieben, Feb-29 faellt in einem Nicht-Schaltjahr auf Feb-28.
+function shiftYearStr(dateStr, deltaYears) {
+  const y = parseInt(dateStr.slice(0, 4), 10) + deltaYears;
+  const m = parseInt(dateStr.slice(5, 7), 10);
+  let d = parseInt(dateStr.slice(8, 10), 10);
+  if (m === 2 && d === 29 && !isLeapYear(y)) d = 28;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function addDaysStr(dateStr, days) {
   const d = new Date(Date.UTC(
     parseInt(dateStr.slice(0, 4), 10),
@@ -139,20 +152,39 @@ async function handleDayTable(url, env, origin) {
   const prodByDate = {};
   prodRows.results.forEach((r) => { prodByDate[r.Date_ISO] = r.Production_kWh; });
 
+  // Produktion des gleichen Kalendertags vor 1 und 2 Jahren (fuer den Jahresvergleich).
+  const y1From = shiftYearStr(from, -1), y1To = shiftYearStr(to, -1);
+  const y2From = shiftYearStr(from, -2), y2To = shiftYearStr(to, -2);
+  const [prodY1Rows, prodY2Rows] = await Promise.all([
+    env.DB_ENERGY.prepare(`SELECT Date_ISO, Production_kWh FROM solarmanager_data WHERE Date_ISO BETWEEN ? AND ?`).bind(y1From, y1To).all(),
+    env.DB_ENERGY.prepare(`SELECT Date_ISO, Production_kWh FROM solarmanager_data WHERE Date_ISO BETWEEN ? AND ?`).bind(y2From, y2To).all(),
+  ]);
+  const prodY1ByDate = {}, prodY2ByDate = {};
+  prodY1Rows.results.forEach((r) => { prodY1ByDate[r.Date_ISO] = r.Production_kWh; });
+  prodY2Rows.results.forEach((r) => { prodY2ByDate[r.Date_ISO] = r.Production_kWh; });
+
   // Planwert (solar_reference_daily, via day_year)
   const refRows = await env.DB_ENERGY
-    .prepare(`SELECT day_year, production_kwh_av FROM solar_reference_daily`)
+    .prepare(`SELECT day_year, production_kwh_av, sun_h_norm FROM solar_reference_daily`)
     .all();
   const planByDoy = {};
-  refRows.results.forEach((r) => { planByDoy[r.day_year] = r.production_kwh_av; });
+  const sunNormByDoy = {};
+  refRows.results.forEach((r) => {
+    planByDoy[r.day_year] = r.production_kwh_av;
+    sunNormByDoy[r.day_year] = r.sun_h_norm;
+  });
 
   // Globalstrahlung (DB_METEO, meteo_klo_daily.obs_date)
   const radRows = await env.DB_METEO
-    .prepare(`SELECT obs_date, radiation_wm2 FROM meteo_klo_daily WHERE obs_date BETWEEN ? AND ?`)
+    .prepare(`SELECT obs_date, radiation_wm2, sunshine_min FROM meteo_klo_daily WHERE obs_date BETWEEN ? AND ?`)
     .bind(extendedFrom, to)
     .all();
   const radByDate = {};
-  radRows.results.forEach((r) => { radByDate[r.obs_date] = r.radiation_wm2; });
+  const sunshineActualByDate = {};
+  radRows.results.forEach((r) => {
+    radByDate[r.obs_date] = r.radiation_wm2;
+    sunshineActualByDate[r.obs_date] = r.sunshine_min !== null && r.sunshine_min !== undefined ? r.sunshine_min / 60 : null; // Minuten -> Stunden
+  });
 
   // Schneedecke (DB_SEESTRASSE, seestrasse52b_values, ParameterID=23, Spalte 'date' ist bereits ein reines Datum)
   let snowByDate = {};
@@ -196,6 +228,12 @@ async function handleDayTable(url, env, origin) {
     const schneedecke = snowByDate[d] ?? null;
     const validation = validationByDate[d];
     const variance = varianceByDate[d];
+    const sunshineActual = sunshineActualByDate[d] ?? null;
+    const sunshineNorm = sunNormByDoy[doy] ?? null;
+
+    const dateY1 = shiftYearStr(d, -1), dateY2 = shiftYearStr(d, -2);
+    const productionY1 = prodY1ByDate[dateY1] ?? null;
+    const productionY2 = prodY2ByDate[dateY2] ?? null;
 
     // Gleitender 30-Tage-Schnitt der Varianz, endend an diesem Tag (nur vorhandene Werte).
     const windowDates = dateRangeStrs(addDaysStr(d, -29), d);
@@ -211,6 +249,10 @@ async function handleDayTable(url, env, origin) {
       validation,
       variance,
       variance30d,
+      sunshineActual,
+      sunshineNorm,
+      productionY1, dateY1,
+      productionY2, dateY2,
     };
   });
 
