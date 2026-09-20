@@ -134,6 +134,19 @@
   .login-card p{color:var(--text-dim); font-size:0.85rem; margin:0 0 18px;}
   .login-card input{width:100%; margin-bottom:12px;}
   .login-card button{width:100%;}
+
+  /* Toggle switch */
+  .toggle-row{display:flex; align-items:center; gap:10px; margin-bottom:16px;}
+  .toggle-switch{position:relative; display:inline-block; width:42px; height:24px; flex:none;}
+  .toggle-switch input{opacity:0; width:0; height:0;}
+  .toggle-slider{position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:var(--grey-300); transition:.15s; border-radius:24px;}
+  .toggle-slider:before{position:absolute; content:""; height:18px; width:18px; left:3px; bottom:3px; background:#fff; transition:.15s; border-radius:50%;}
+  .toggle-switch input:checked + .toggle-slider{background:var(--green);}
+  .toggle-switch input:checked + .toggle-slider:before{transform:translateX(18px);}
+  .toggle-label{font-size:0.9rem; font-weight:600;}
+  .toggle-label .state{font-weight:400; color:var(--text-dim); margin-left:4px;}
+  .sub-heading{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:0.85rem; margin:18px 0 8px; color:var(--text-dim);}
+  .card hr.sep{border:none; border-top:1px solid var(--grey-300); margin:18px 0;}
 </style>
 </head>
 <body>
@@ -164,8 +177,15 @@
 
       <div class="kpi-grid" id="kpiGrid"></div>
 
-      <h2>Start Charging</h2>
+      <h2>Automatic Charging</h2>
       <div class="card">
+        <div class="toggle-row">
+          <label class="toggle-switch">
+            <input type="checkbox" id="automationEnabledToggle" onchange="onAutomationToggleChange()">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">Automatik <span class="state" id="automationStateLabel">–</span></span>
+        </div>
         <div class="row">
           <div class="field">
             <label for="minEinspeisungInput">Minimum Einspeisung (Wh)</label>
@@ -181,55 +201,11 @@
         <div class="hint-txt">
           <div><strong>Minimum Einspeisung:</strong> Wenn dieser Wert (Ø 30&#39;) überschritten wird UND der Lademodus aktuell "Only solar" ist, schaltet die Automation auf "Minimal &amp; Solar" (Laden startet).</div>
           <div><strong>Maximum Netz:</strong> Wenn der Netzbezug (Ø 30&#39;) diesen Wert übersteigt UND der Lademodus aktuell "Minimal &amp; Solar" ist, schaltet die Automation zurück auf "Only solar" (Laden stoppt).</div>
-          <div style="margin-top:6px;">Prüfung läuft alle 15&#39; automatisch (GitHub Action). Andere Modi (Fast Charge, Do not charge, Target SoC, ...) werden nicht angetastet.</div>
+          <div style="margin-top:6px;">Prüfung läuft alle 15&#39; automatisch (Cloudflare Worker Cron). Andere Modi (Fast Charge, Do not charge, Target SoC, ...) werden nicht angetastet.</div>
         </div>
-      </div>
 
-      <h2>Ziel-SoC</h2>
-      <div class="card">
-        <div class="row">
-          <div class="field narrow">
-            <label for="targetSocInput">Ziel-SoC (%)</label>
-            <input id="targetSocInput" type="number" min="0" max="100" step="1">
-          </div>
-          <button onclick="saveTargetSoc()" id="saveSocBtn">Speichern</button>
-        </div>
-        <div id="socStatus" class="status-msg"></div>
-      </div>
-
-      <h2>Lademodus ändern</h2>
-      <div class="card">
-        <div class="row">
-          <div class="field">
-            <label for="modeSelect">Modus</label>
-            <select id="modeSelect" onchange="onModeChange()">
-              <option value="0">0 · Fast Charge</option>
-              <option value="1">1 · Only solar</option>
-              <option value="2">2 · Solar &amp; tariff optimized</option>
-              <option value="3">3 · Do not charge</option>
-              <option value="4">4 · Constant current</option>
-              <option value="5">5 · Minimal &amp; Solar</option>
-              <option value="6">6 · Charging Target (kWh)</option>
-              <option value="7">7 · Charging Target (SoC)</option>
-              <option value="8">8 · Aria</option>
-            </select>
-          </div>
-          <div class="field narrow" id="fieldConstCurrent" style="display:none;">
-            <label for="constCurrentInput">Konstantstrom (A)</label>
-            <input id="constCurrentInput" type="number" min="6" max="32" step="1" value="16">
-          </div>
-          <div class="field narrow" id="fieldModeSoc" style="display:none;">
-            <label for="modeSocInput">Ziel-SoC (%)</label>
-            <input id="modeSocInput" type="number" min="0" max="100" step="1" value="80">
-          </div>
-          <button onclick="applyChargingMode()" id="applyModeBtn">Senden</button>
-        </div>
-        <div id="modeStatus" class="status-msg"></div>
-        <div class="hint-txt">Sendet den Befehl direkt an den energymanager-api Worker, der ihn an die Solar-Manager-API weiterleitet. Änderung wirkt i.d.R. innerhalb weniger Sekunden.</div>
-      </div>
-
-      <h2>Geplanter Lademodus-Wechsel</h2>
-      <div class="card">
+        <hr class="sep">
+        <div class="sub-heading">Geplanter Lademodus-Wechsel</div>
         <div class="row">
           <div class="field">
             <label for="scheduleRepeatSelect">Häufigkeit</label>
@@ -293,7 +269,69 @@
         </div>
         <div id="scheduleStatus" class="status-msg"></div>
         <div id="scheduleCurrent" class="hint-txt"></div>
-        <div class="hint-txt">Die Prüfung läuft im 15-Minuten-Takt (gleicher Cron wie die Automatik) — der Wechsel erfolgt also bis zu 15&nbsp;Minuten nach dem gewählten Zeitpunkt, nicht auf die Sekunde genau. Bei "Wöchentlich" wird nach jeder Ausführung automatisch der nächste Termin (+7 Tage) geplant.</div>
+        <div class="hint-txt">Die Prüfung läuft im 15-Minuten-Takt (gleicher Cron wie die Automatik) — der Wechsel erfolgt also bis zu 15&nbsp;Minuten nach dem gewählten Zeitpunkt, nicht auf die Sekunde genau. Bei "Wöchentlich" wird nach jeder Ausführung automatisch der nächste Termin (+7 Tage) geplant. Sowohl die Schwellenwert-Automatik oben als auch dieser geplante Wechsel laufen nur, wenn "Automatik" aktiv ist.</div>
+      </div>
+
+      <h2>Manual Charging</h2>
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="modeSelect">Modus</label>
+            <select id="modeSelect" onchange="onModeChange()">
+              <option value="0">0 · Fast Charge</option>
+              <option value="1">1 · Only solar</option>
+              <option value="2">2 · Solar &amp; tariff optimized</option>
+              <option value="3">3 · Do not charge</option>
+              <option value="4">4 · Constant current</option>
+              <option value="5">5 · Minimal &amp; Solar</option>
+              <option value="6">6 · Charging Target (kWh)</option>
+              <option value="7">7 · Charging Target (SoC)</option>
+              <option value="8">8 · Aria</option>
+            </select>
+          </div>
+          <div class="field narrow" id="fieldConstCurrent" style="display:none;">
+            <label for="constCurrentInput">Konstantstrom (A)</label>
+            <input id="constCurrentInput" type="number" min="6" max="32" step="1" value="16">
+          </div>
+          <div class="field narrow" id="fieldModeSoc" style="display:none;">
+            <label for="modeSocInput">Ziel-SoC (%)</label>
+            <input id="modeSocInput" type="number" min="0" max="100" step="1" value="80">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="manualVariantSelect">Wie lange?</label>
+            <select id="manualVariantSelect" onchange="onManualVariantChange()">
+              <option value="always">Dauerhaft</option>
+              <option value="duration">Für X Stunden</option>
+              <option value="soc">Bis Ziel-SoC</option>
+            </select>
+          </div>
+          <div class="field narrow" id="fieldManualDuration" style="display:none;">
+            <label for="manualDurationInput">Dauer (Stunden)</label>
+            <input id="manualDurationInput" type="number" min="0.5" max="48" step="0.5" value="2">
+          </div>
+          <div class="field narrow" id="fieldManualSocTarget" style="display:none;">
+            <label for="manualSocTargetInput">Ziel-SoC (%)</label>
+            <input id="manualSocTargetInput" type="number" min="0" max="100" step="1" value="80">
+          </div>
+          <div class="field narrow" id="fieldManualRevertMode" style="display:none;">
+            <label for="manualRevertModeSelect">Danach</label>
+            <select id="manualRevertModeSelect">
+              <option value="0">0 · Fast Charge</option>
+              <option value="1" selected>1 · Only solar</option>
+              <option value="2">2 · Solar &amp; tariff optimized</option>
+              <option value="3">3 · Do not charge</option>
+              <option value="5">5 · Minimal &amp; Solar</option>
+              <option value="8">8 · Aria</option>
+            </select>
+          </div>
+          <button onclick="applyManualCharge()" id="applyModeBtn">Senden</button>
+        </div>
+        <div id="modeStatus" class="status-msg"></div>
+        <div id="manualPending" class="hint-txt"></div>
+        <button class="ghost" id="cancelManualBtn" onclick="cancelManualCharge()" style="display:none; margin-top:8px;">Rückfall abbrechen</button>
+        <div class="hint-txt">Sendet den Befehl direkt an den energymanager-api Worker, der ihn an die Solar-Manager-API weiterleitet. Änderung wirkt i.d.R. innerhalb weniger Sekunden. Bei "Für X Stunden"/"Bis Ziel-SoC" prüft der Worker unabhängig von der Automatic-Charging-Einstellung alle 15&#39;, ob der Rückfall fällig ist.</div>
       </div>
 
     </div>
@@ -309,8 +347,8 @@ const API_BASE = "https://api.energy.munot.app";
 function showApp(){
   load();
   scheduleRefresh();
-  loadTargetSoc();
   loadChargingAutomation();
+  loadManualCharge();
 }
 
 // ---------- Cloudflare Worker API (D1) ----------
@@ -456,7 +494,7 @@ function scheduleRefresh(){
   refreshTimer = setInterval(load, REFRESH_MS);
 }
 
-// ---------- Start-Charging-Schwellen (Worker: /api/config/thresholds, D1) ----------
+// ---------- Automatic Charging: Schwellen + Toggle (Worker: /api/config/thresholds, D1) ----------
 async function loadChargingAutomation(){
   try{
     const res = await fetch(`${API_BASE}/api/config/thresholds`, { cache: "no-store", credentials: "include" });
@@ -464,10 +502,23 @@ async function loadChargingAutomation(){
     const json = await res.json();
     document.getElementById('minEinspeisungInput').value = json.min_einspeisung_wh ?? '';
     document.getElementById('maxNetzInput').value = json.max_netzbezug_wh ?? '';
+    const enabled = json.automation_enabled !== false;
+    document.getElementById('automationEnabledToggle').checked = enabled;
+    setAutomationStateLabel(enabled);
   } catch(e){
     document.getElementById('automationStatus').textContent = `Konnte aktuelle Werte nicht laden (${e.message}).`;
     document.getElementById('automationStatus').className = 'status-msg err';
   }
+}
+
+function setAutomationStateLabel(enabled){
+  document.getElementById('automationStateLabel').textContent = enabled ? 'aktiv' : 'inaktiv';
+}
+
+function onAutomationToggleChange(){
+  const enabled = document.getElementById('automationEnabledToggle').checked;
+  setAutomationStateLabel(enabled);
+  saveChargingAutomation();
 }
 
 async function saveChargingAutomation(){
@@ -475,6 +526,7 @@ async function saveChargingAutomation(){
   const statusEl = document.getElementById('automationStatus');
   const minEinspeisung = parseInt(document.getElementById('minEinspeisungInput').value, 10);
   const maxNetz = parseInt(document.getElementById('maxNetzInput').value, 10);
+  const enabled = document.getElementById('automationEnabledToggle').checked;
   if (isNaN(minEinspeisung) || isNaN(maxNetz) || minEinspeisung < 0 || maxNetz < 0){
     statusEl.textContent = "Bitte gültige Werte (≥ 0) für beide Felder eingeben.";
     statusEl.className = "status-msg err";
@@ -488,11 +540,11 @@ async function saveChargingAutomation(){
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ min_einspeisung_wh: minEinspeisung, max_netzbezug_wh: maxNetz })
+      body: JSON.stringify({ min_einspeisung_wh: minEinspeisung, max_netzbezug_wh: maxNetz, automation_enabled: enabled })
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
-    statusEl.textContent = `Gespeichert: Min. Einspeisung ${minEinspeisung} Wh, Max. Netz ${maxNetz} Wh`;
+    statusEl.textContent = `Gespeichert: Min. Einspeisung ${minEinspeisung} Wh, Max. Netz ${maxNetz} Wh, Automatik ${enabled ? 'aktiv' : 'inaktiv'}`;
     statusEl.className = "status-msg ok";
   } catch(e){
     statusEl.textContent = `Fehler beim Speichern: ${e.message}`;
@@ -502,75 +554,52 @@ async function saveChargingAutomation(){
   }
 }
 
-// ---------- Ziel-SoC (Worker: /api/config/target-soc, D1) ----------
-async function loadTargetSoc(){
-  try{
-    const res = await fetch(`${API_BASE}/api/config/target-soc`, { cache: "no-store", credentials: "include" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    document.getElementById('targetSocInput').value = json.target_soc_percent ?? '';
-  } catch(e){
-    document.getElementById('socStatus').textContent = `Konnte aktuellen Wert nicht laden (${e.message}).`;
-    document.getElementById('socStatus').className = 'status-msg err';
-  }
-}
-
-async function saveTargetSoc(){
-  const btn = document.getElementById('saveSocBtn');
-  const statusEl = document.getElementById('socStatus');
-  const val = parseInt(document.getElementById('targetSocInput').value, 10);
-  if (isNaN(val) || val < 0 || val > 100){
-    statusEl.textContent = "Bitte einen Wert zwischen 0 und 100 eingeben.";
-    statusEl.className = "status-msg err";
-    return;
-  }
-  btn.disabled = true;
-  statusEl.textContent = "Speichere...";
-  statusEl.className = "status-msg pending";
-  try{
-    const res = await fetch(`${API_BASE}/api/config/target-soc`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target_soc_percent: val })
-    });
-    const result = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
-    statusEl.textContent = `Gespeichert: ${val}%`;
-    statusEl.className = "status-msg ok";
-  } catch(e){
-    statusEl.textContent = `Fehler beim Speichern: ${e.message}`;
-    statusEl.className = "status-msg err";
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// ---------- Lademodus ändern (GitHub Action) ----------
+// ---------- Manual Charging (Worker: /api/admin/car-charger-manual, /api/config/manual-charge) ----------
 function onModeChange(){
   const mode = document.getElementById('modeSelect').value;
   document.getElementById('fieldConstCurrent').style.display = (mode === '4') ? 'flex' : 'none';
   document.getElementById('fieldModeSoc').style.display = (mode === '7') ? 'flex' : 'none';
 }
 
-async function applyChargingMode(){
+function onManualVariantChange(){
+  const variant = document.getElementById('manualVariantSelect').value;
+  document.getElementById('fieldManualDuration').style.display = (variant === 'duration') ? 'flex' : 'none';
+  document.getElementById('fieldManualSocTarget').style.display = (variant === 'soc') ? 'flex' : 'none';
+  document.getElementById('fieldManualRevertMode').style.display = (variant === 'always') ? 'none' : 'flex';
+}
+
+function fmtZurichTime(iso){
+  if (!iso) return "–";
+  try{
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    const todayStr = new Date().toLocaleDateString('de-CH', {timeZone:'Europe/Zurich'});
+    const dStr = d.toLocaleDateString('de-CH', {timeZone:'Europe/Zurich'});
+    const timeStr = d.toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Zurich'});
+    return dStr === todayStr ? `${timeStr} Uhr` : `${dStr}, ${timeStr} Uhr`;
+  } catch(e){ return iso; }
+}
+
+async function applyManualCharge(){
   const btn = document.getElementById('applyModeBtn');
   const statusEl = document.getElementById('modeStatus');
-  if (!resolvedDeviceId){
-    statusEl.textContent = "Geräte-ID der Ladestation nicht bekannt (siehe oben) — Aktion nicht möglich.";
-    statusEl.className = "status-msg err";
-    return;
+  const mode = parseInt(document.getElementById('modeSelect').value, 10);
+  const variant = document.getElementById('manualVariantSelect').value;
+  const body = { charging_mode: mode, variant };
+  if (mode === 4) body.constant_current = document.getElementById('constCurrentInput').value;
+  if (mode === 7) body.target_soc = document.getElementById('modeSocInput').value;
+  if (variant === 'duration'){
+    body.duration_hours = document.getElementById('manualDurationInput').value;
+    body.revert_mode = parseInt(document.getElementById('manualRevertModeSelect').value, 10);
+  } else if (variant === 'soc'){
+    body.target_soc_stop = document.getElementById('manualSocTargetInput').value;
+    body.revert_mode = parseInt(document.getElementById('manualRevertModeSelect').value, 10);
   }
-  const mode = document.getElementById('modeSelect').value;
-  const body = { device_id: resolvedDeviceId, charging_mode: parseInt(mode, 10) };
-  if (mode === '4') body.constant_current = document.getElementById('constCurrentInput').value;
-  if (mode === '7') body.target_soc = document.getElementById('modeSocInput').value;
 
   btn.disabled = true;
   statusEl.textContent = "Sende Befehl...";
   statusEl.className = "status-msg pending";
   try{
-    const res = await fetch(`${API_BASE}/api/admin/car-charger-control`, {
+    const res = await fetch(`${API_BASE}/api/admin/car-charger-manual`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -578,13 +607,74 @@ async function applyChargingMode(){
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
-    statusEl.textContent = `Befehl ausgeführt (Modus ${mode} · ${MODE_LABELS[parseInt(mode,10)]}).`;
+    const modeLabel = MODE_LABELS[mode] || mode;
+    if (variant === 'duration'){
+      statusEl.textContent = `Laden mit ${modeLabel} bis ${fmtZurichTime(result.until_utc)}`;
+    } else if (variant === 'soc'){
+      statusEl.textContent = `Laden mit ${modeLabel} bis SoC ${result.until_soc}%`;
+    } else {
+      statusEl.textContent = `Modus geändert auf ${modeLabel}.`;
+    }
     statusEl.className = "status-msg ok";
+    await loadManualCharge();
   } catch(e){
     statusEl.textContent = `Fehler beim Senden: ${e.message}`;
     statusEl.className = "status-msg err";
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function loadManualCharge(){
+  const pendingEl = document.getElementById('manualPending');
+  const cancelBtn = document.getElementById('cancelManualBtn');
+  // Letzten Ziel-SoC-Wert zur Vorbefuellung des Variante-c-Felds laden.
+  try{
+    const res = await fetch(`${API_BASE}/api/config/target-soc`, { cache: "no-store", credentials: "include" });
+    if (res.ok){
+      const json = await res.json();
+      if (json.target_soc_percent !== null && json.target_soc_percent !== undefined){
+        document.getElementById('manualSocTargetInput').value = json.target_soc_percent;
+      }
+    }
+  } catch(e){ /* Vorbefuellung optional, kein Fehler-Feedback noetig */ }
+
+  try{
+    const res = await fetch(`${API_BASE}/api/config/manual-charge`, { cache: "no-store", credentials: "include" });
+    const data = await res.json();
+    const modeTxt = MODE_LABELS[data.manual_set_mode] ?? data.manual_set_mode;
+    const revertTxt = MODE_LABELS[data.manual_revert_mode] ?? data.manual_revert_mode;
+    if (data.manual_status === 'pending'){
+      if (data.manual_revert_at_utc){
+        pendingEl.innerHTML = `<strong>Aktiv:</strong> Laden mit ${modeTxt} bis ${fmtZurichTime(data.manual_revert_at_utc)} &rarr; danach ${revertTxt}`;
+      } else if (data.manual_revert_soc_target !== null && data.manual_revert_soc_target !== undefined){
+        pendingEl.innerHTML = `<strong>Aktiv:</strong> Laden mit ${modeTxt} bis SoC ${data.manual_revert_soc_target}% &rarr; danach ${revertTxt}`;
+      }
+      cancelBtn.style.display = 'inline-block';
+    } else {
+      pendingEl.textContent = '';
+      cancelBtn.style.display = 'none';
+    }
+  } catch(e){
+    pendingEl.textContent = '';
+    cancelBtn.style.display = 'none';
+  }
+}
+
+async function cancelManualCharge(){
+  const statusEl = document.getElementById('modeStatus');
+  try{
+    const res = await fetch(`${API_BASE}/api/config/manual-charge/cancel`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    statusEl.textContent = "Rückfall abgebrochen (aktueller Lademodus bleibt bestehen).";
+    statusEl.className = "status-msg ok";
+    await loadManualCharge();
+  } catch(e){
+    statusEl.textContent = `Fehler beim Abbrechen: ${e.message}`;
+    statusEl.className = "status-msg err";
   }
 }
 
