@@ -129,21 +129,25 @@ async function getThresholds(db, env) {
   // D1 ist die Quelle der Wahrheit (per car.html ueber /api/config/thresholds
   // pflegbar). CAR_CHARGING_THRESHOLDS_JSON dient nur als Fallback/Erststart.
   const row = await db
-    .prepare("SELECT min_einspeisung_wh, max_netzbezug_wh FROM car_charging_config WHERE id = 1")
+    .prepare("SELECT min_einspeisung_wh, max_netzbezug_wh, automation_enabled FROM car_charging_config WHERE id = 1")
     .first();
   if (row && row.min_einspeisung_wh !== null && row.max_netzbezug_wh !== null) {
-    return { min_einspeisung_wh: row.min_einspeisung_wh, max_netzbezug_wh: row.max_netzbezug_wh };
+    return {
+      min_einspeisung_wh: row.min_einspeisung_wh,
+      max_netzbezug_wh: row.max_netzbezug_wh,
+      automation_enabled: row.automation_enabled === null || row.automation_enabled === undefined ? true : !!row.automation_enabled,
+    };
   }
   const fallback = JSON.parse(env.CAR_CHARGING_THRESHOLDS_JSON || "{}");
   if (fallback.min_einspeisung_wh !== undefined && fallback.max_netzbezug_wh !== undefined) {
-    return fallback;
+    return { ...fallback, automation_enabled: fallback.automation_enabled ?? true };
   }
   return null;
 }
 
 async function handleThresholdsGet(request, env) {
   const t = await getThresholds(env.DB, env);
-  if (!t) return jsonResponse({ min_einspeisung_wh: null, max_netzbezug_wh: null });
+  if (!t) return jsonResponse({ min_einspeisung_wh: null, max_netzbezug_wh: null, automation_enabled: true });
   return jsonResponse(t);
 }
 
@@ -151,33 +155,36 @@ async function handleThresholdsSet(request, env) {
   const body = await request.json();
   const minEinspeisungWh = Number(body.min_einspeisung_wh);
   const maxNetzbezugWh = Number(body.max_netzbezug_wh);
+  const automationEnabled = body.automation_enabled ? 1 : 0;
   if (!Number.isFinite(minEinspeisungWh) || minEinspeisungWh < 0 ||
       !Number.isFinite(maxNetzbezugWh) || maxNetzbezugWh < 0) {
     return jsonResponse({ error: "min_einspeisung_wh und max_netzbezug_wh (>= 0) erforderlich" }, 400);
   }
   const before = await env.DB
-    .prepare("SELECT min_einspeisung_wh, max_netzbezug_wh FROM car_charging_config WHERE id = 1")
+    .prepare("SELECT min_einspeisung_wh, max_netzbezug_wh, automation_enabled FROM car_charging_config WHERE id = 1")
     .first();
   const oldMin = before && before.min_einspeisung_wh !== null ? before.min_einspeisung_wh : "–";
   const oldMax = before && before.max_netzbezug_wh !== null ? before.max_netzbezug_wh : "–";
+  const oldEnabled = before ? !!before.automation_enabled : true;
 
   await env.DB.prepare(`
-    INSERT INTO car_charging_config (id, min_einspeisung_wh, max_netzbezug_wh, updated_at)
-    VALUES (1, ?, ?, ?)
+    INSERT INTO car_charging_config (id, min_einspeisung_wh, max_netzbezug_wh, automation_enabled, updated_at)
+    VALUES (1, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       min_einspeisung_wh=excluded.min_einspeisung_wh,
       max_netzbezug_wh=excluded.max_netzbezug_wh,
+      automation_enabled=excluded.automation_enabled,
       updated_at=excluded.updated_at`)
-    .bind(minEinspeisungWh, maxNetzbezugWh, nowZurich())
+    .bind(minEinspeisungWh, maxNetzbezugWh, automationEnabled, nowZurich())
     .run();
 
-  await logActivity(
-    env.DB,
-    `Minimum Einspeisung (Wh): ${oldMin} -> ${minEinspeisungWh} & Maximum Netz (Wh): ${oldMax} -> ${maxNetzbezugWh}`,
-    "energymanager & Start Charging update"
-  );
+  const changeParts = [`Minimum Einspeisung (Wh): ${oldMin} -> ${minEinspeisungWh}`, `Maximum Netz (Wh): ${oldMax} -> ${maxNetzbezugWh}`];
+  if (oldEnabled !== !!automationEnabled) {
+    changeParts.push(`Automatik: ${oldEnabled ? "aktiv" : "inaktiv"} -> ${automationEnabled ? "aktiv" : "inaktiv"}`);
+  }
+  await logActivity(env.DB, changeParts.join(" & "), "energymanager & Automatic Charging update");
 
-  return jsonResponse({ ok: true, min_einspeisung_wh: minEinspeisungWh, max_netzbezug_wh: maxNetzbezugWh });
+  return jsonResponse({ ok: true, min_einspeisung_wh: minEinspeisungWh, max_netzbezug_wh: maxNetzbezugWh, automation_enabled: !!automationEnabled });
 }
 
 /* ---------------------------------------------------------------------- *
@@ -351,8 +358,29 @@ async function handleScheduleCancel(request, env) {
   return jsonResponse({ ok: true });
 }
 
+async function resolveCurrentSoc(db) {
+  // Sucht ueber ALLE Geraete (SoC kann auf einem anderen sensorId liegen
+  // als die Ladeleistung, z.B. das Auto selbst statt der Wallbox).
+  const row = await db
+    .prepare(
+      `SELECT fetched_at, device_id, soc FROM solarmanager_live_devices
+       WHERE soc IS NOT NULL
+         AND datetime(fetched_at) >= datetime('now', ?)
+       ORDER BY fetched_at DESC LIMIT 1`
+    )
+    .bind(`-${AVG_WINDOW_MIN} minutes`)
+    .first();
+  if (!row) return null;
+  return { soc: Number(row.soc), device_id: row.device_id, fetched_at: row.fetched_at };
+}
+
 async function runScheduledModeSwitch(env) {
   const db = env.DB;
+  const thresholds = await getThresholds(db, env);
+  if (thresholds && thresholds.automation_enabled === false) {
+    console.log("Automatic Charging deaktiviert -- geplanter Wechsel wird nicht geprueft.");
+    return;
+  }
   const row = await db
     .prepare(`SELECT scheduled_at_utc, scheduled_mode, scheduled_target_soc, scheduled_constant_current,
                      scheduled_repeat, scheduled_weekday, scheduled_time_local
@@ -414,6 +442,10 @@ async function runCarChargingAutomation(env) {
   const thresholds = await getThresholds(db, env);
   if (!thresholds) {
     console.log("Keine Schwellenwerte konfiguriert (weder D1 noch CAR_CHARGING_THRESHOLDS_JSON) -- Abbruch.");
+    return;
+  }
+  if (thresholds.automation_enabled === false) {
+    console.log("Automatic Charging deaktiviert -- keine Pruefung.");
     return;
   }
   const minEinspeisungWh = thresholds.min_einspeisung_wh;
@@ -493,6 +525,154 @@ async function handleCarChargerControl(request, env) {
     return jsonResponse({ ok: true, device_id, charging_mode, ...extra });
   } catch (e) {
     return jsonResponse({ error: String(e) }, 502);
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * Manual Charging: Modus setzen mit optionalem automatischem Rueckfall
+ * (nach X Stunden ODER bei Erreichen eines Ziel-SoC) -- unabhaengig vom
+ * Automatic-Charging-Toggle (siehe runManualChargeRevert).
+ * ---------------------------------------------------------------------- */
+
+async function handleManualChargeSet(request, env) {
+  const body = await request.json();
+  const mode = Number(body.charging_mode);
+  const variant = body.variant === "duration" || body.variant === "soc" ? body.variant : "always";
+  if (!Number.isFinite(mode) || mode < 0 || mode > 8) {
+    return jsonResponse({ error: "charging_mode (0-8) erforderlich" }, 400);
+  }
+
+  const deviceId = await resolveLadestationDeviceId(env.DB);
+  if (!deviceId) return jsonResponse({ error: "Ladestation nicht gefunden" }, 502);
+
+  const extra = {};
+  if (mode === 4 && body.constant_current) extra.constantCurrentSetting = Math.round(Number(body.constant_current));
+  if (mode === 7 && body.target_soc) extra.chargingTargetSoc = Math.round(Number(body.target_soc));
+
+  const revertMode = Number.isFinite(Number(body.revert_mode)) ? Number(body.revert_mode) : MODE_ONLY_SOLAR;
+
+  let revertAtUtc = null, revertSocTarget = null, manualStatus = null, summary;
+  if (variant === "duration") {
+    const hours = Number(body.duration_hours);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      return jsonResponse({ error: "duration_hours (> 0) erforderlich" }, 400);
+    }
+    revertAtUtc = new Date(Date.now() + hours * 3600000).toISOString();
+    manualStatus = "pending";
+    summary = { until_utc: revertAtUtc, revert_mode: revertMode };
+  } else if (variant === "soc") {
+    const target = Number(body.target_soc_stop);
+    if (!Number.isFinite(target) || target < 0 || target > 100) {
+      return jsonResponse({ error: "target_soc_stop (0-100) erforderlich" }, 400);
+    }
+    revertSocTarget = Math.round(target);
+    manualStatus = "pending";
+    summary = { until_soc: revertSocTarget, revert_mode: revertMode };
+    // Gleich als "zuletzt verwendeter" Ziel-SoC merken (Vorbefuellung beim naechsten Mal).
+    await env.DB.prepare(`
+      INSERT INTO car_charging_config (id, target_soc_percent, updated_at)
+      VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET target_soc_percent=excluded.target_soc_percent, updated_at=excluded.updated_at`)
+      .bind(revertSocTarget, nowZurich())
+      .run();
+  } else {
+    summary = {};
+  }
+
+  const oldMode = await currentMode(env.DB, deviceId);
+  try {
+    await setChargerMode(env, deviceId, mode, extra);
+  } catch (e) {
+    return jsonResponse({ error: String(e) }, 502);
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO car_charging_config
+      (id, manual_set_mode, manual_revert_mode, manual_revert_at_utc, manual_revert_soc_target,
+       manual_status, manual_executed_at, updated_at)
+    VALUES (1, ?, ?, ?, ?, ?, NULL, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      manual_set_mode=excluded.manual_set_mode,
+      manual_revert_mode=excluded.manual_revert_mode,
+      manual_revert_at_utc=excluded.manual_revert_at_utc,
+      manual_revert_soc_target=excluded.manual_revert_soc_target,
+      manual_status=excluded.manual_status,
+      manual_executed_at=excluded.manual_executed_at,
+      updated_at=excluded.updated_at`)
+    .bind(mode, revertMode, revertAtUtc, revertSocTarget, manualStatus, nowZurich())
+    .run();
+
+  let changeDesc = `Manuell: ${modeLabel(oldMode)} -> ${modeLabel(mode)}`;
+  if (variant === "duration") changeDesc += `, Rueckfall auf ${modeLabel(revertMode)} um ${revertAtUtc}`;
+  if (variant === "soc") changeDesc += `, Rueckfall auf ${modeLabel(revertMode)} bei SoC ${revertSocTarget}%`;
+  await logActivity(env.DB, changeDesc, "energymanager & Manual Charging");
+
+  return jsonResponse({ ok: true, charging_mode: mode, variant, ...summary });
+}
+
+async function handleManualChargeGet(request, env) {
+  const row = await env.DB
+    .prepare(`SELECT manual_set_mode, manual_revert_mode, manual_revert_at_utc, manual_revert_soc_target,
+                     manual_status, manual_executed_at
+              FROM car_charging_config WHERE id = 1`)
+    .first();
+  if (!row) return jsonResponse({ manual_status: null });
+  return jsonResponse(row);
+}
+
+async function handleManualChargeCancel(request, env) {
+  await env.DB.prepare(`
+    UPDATE car_charging_config
+    SET manual_status = 'cancelled', updated_at = ?
+    WHERE id = 1 AND manual_status = 'pending'`)
+    .bind(nowZurich())
+    .run();
+  await logActivity(env.DB, "Manual-Charging-Rueckfall abgebrochen", "energymanager & Manual Charging");
+  return jsonResponse({ ok: true });
+}
+
+// Unabhaengig vom Automatic-Charging-Toggle (siehe getThresholds) -- ein
+// manuell gesetzter Rueckfall (Dauer/Ziel-SoC) gilt unabhaengig davon, ob
+// die Schwellenwert-Automatik ein-/ausgeschaltet ist.
+async function runManualChargeRevert(env) {
+  const db = env.DB;
+  const row = await db
+    .prepare(`SELECT manual_set_mode, manual_revert_mode, manual_revert_at_utc, manual_revert_soc_target
+              FROM car_charging_config WHERE id = 1 AND manual_status = 'pending'`)
+    .first();
+  if (!row) return;
+
+  const deviceId = await resolveLadestationDeviceId(db);
+  if (!deviceId) {
+    console.log("Manual-Charging-Rueckfall: Ladestation nicht gefunden -- Abbruch.");
+    return;
+  }
+
+  let due = false;
+  if (row.manual_revert_at_utc) {
+    due = Date.parse(row.manual_revert_at_utc) <= Date.now();
+  } else if (row.manual_revert_soc_target !== null && row.manual_revert_soc_target !== undefined) {
+    const socInfo = await resolveCurrentSoc(db);
+    due = !!socInfo && socInfo.soc >= row.manual_revert_soc_target;
+  }
+  if (!due) return;
+
+  const revertMode = Number(row.manual_revert_mode);
+  try {
+    await setChargerMode(env, deviceId, revertMode);
+    await db.prepare(`
+      UPDATE car_charging_config
+      SET manual_status = 'executed', manual_executed_at = ?, updated_at = ?
+      WHERE id = 1`)
+      .bind(nowZurich(), nowZurich())
+      .run();
+    await logActivity(
+      db,
+      `Manual-Charging-Rueckfall ausgefuehrt: ${modeLabel(Number(row.manual_set_mode))} -> ${modeLabel(revertMode)}`,
+      "energymanager & Manual Charging"
+    );
+  } catch (e) {
+    console.log(`Manual-Charging-Rueckfall fehlgeschlagen: ${e}`);
   }
 }
 
@@ -849,6 +1029,7 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runScheduledModeSwitch(env));
     ctx.waitUntil(runCarChargingAutomation(env));
+    ctx.waitUntil(runManualChargeRevert(env));
   },
 
   async fetch(request, env) {
@@ -870,6 +1051,12 @@ export default {
         resp = await handleKostalUpload(request, env);
       } else if (pathname === "/api/admin/car-charger-control" && request.method === "POST") {
         resp = await handleCarChargerControl(request, env);
+      } else if (pathname === "/api/admin/car-charger-manual" && request.method === "POST") {
+        resp = await handleManualChargeSet(request, env);
+      } else if (pathname === "/api/config/manual-charge" && request.method === "GET") {
+        resp = await handleManualChargeGet(request, env);
+      } else if (pathname === "/api/config/manual-charge/cancel" && request.method === "POST") {
+        resp = await handleManualChargeCancel(request, env);
       } else if (pathname === "/api/config/thresholds" && request.method === "GET") {
         resp = await handleThresholdsGet(request, env);
       } else if (pathname === "/api/config/thresholds" && request.method === "POST") {
