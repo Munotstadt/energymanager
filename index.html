@@ -71,6 +71,8 @@
 
   .kpi-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:12px;}
   @media(min-width:480px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
+  .kpi-grid.kpi-grid-main{grid-template-columns:repeat(2,1fr);}
+  @media(min-width:760px){.kpi-grid.kpi-grid-main{grid-template-columns:repeat(4,1fr);}}
   .kpi-grid.kpi-grid-devices{margin-bottom:8px;}
   @media(min-width:760px){.kpi-grid.kpi-grid-devices{grid-template-columns:repeat(4,1fr);}}
   .kpi{
@@ -121,12 +123,28 @@
   .chart-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
   .chart-scroll svg{display:block;}
 
+  /* Chart-Tooltip (Hover / Klick / Tap) */
+  #chartTip{
+    position:fixed; z-index:100; display:none; pointer-events:none; max-width:260px;
+    background:#fff; border:1px solid var(--grey-300); border-radius:var(--radius);
+    box-shadow:0 4px 14px rgba(0,0,0,.14); padding:8px 10px;
+    font-family:'IBM Plex Mono',monospace; font-size:0.72rem; color:var(--text);
+  }
+  #chartTip .tt-title{font-weight:600; margin-bottom:4px;}
+  #chartTip .tt-row{display:flex; align-items:center; gap:6px; white-space:nowrap; margin-top:2px;}
+  #chartTip .tt-row span{flex:1; color:var(--text-dim);}
+  #chartTip .tt-row b{font-weight:600; margin-left:10px;}
+  #chartTip .tt-row.total{border-top:1px solid var(--grey-300); margin-top:4px; padding-top:4px;}
+  .hit{fill:rgba(0,0,0,0); pointer-events:all; cursor:pointer;}
+  .hit.active{fill:rgba(0,0,0,.06);}
+
   #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
   .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
   a{color:var(--accent);}
 </style>
 </head>
 <body>
+<div id="chartTip"></div>
 <header class="topbar">
   <div class="brand">Munotstadt <span>Energy</span></div>
   <div class="nav-right">
@@ -150,7 +168,7 @@
   <div id="status">Lade Daten von Turso...</div>
   <div id="content" style="display:none;">
 
-    <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="kpi-grid kpi-grid-main" id="kpiGrid"></div>
     <div class="kpi-grid kpi-grid-devices" id="kpiGridDevices"></div>
 
     <h2>Tagesverlauf <span class="hint">Verbrauch &amp; Produktion</span></h2>
@@ -193,6 +211,16 @@
       <div class="chart-scroll" id="chartAutarky"></div>
     </div>
 
+    <h2>Gerätenutzung pro Monat <span class="hint">Entfeuchter, Wasserpumpe, Ladestation · scrollbar</span></h2>
+    <div class="card">
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--purple)"></i>Entfeuchter</span>
+        <span><i class="swatch" style="background:var(--blue)"></i>Wasserpumpe</span>
+        <span><i class="swatch" style="background:var(--amber)"></i>Ladestation</span>
+      </div>
+      <div class="chart-scroll" id="chartDevices"></div>
+    </div>
+
     <h2>Jahresvergleich pro Monat <span class="hint">Jan–Dez, Jahre farblich unterschieden</span></h2>
     <div class="tabs" id="metricTabs">
       <div class="tab" data-metric="Consumption_kWh">Verbrauch</div>
@@ -209,26 +237,6 @@
       <div id="chartYearly"></div>
     </div>
 
-    <h2>Gerätenutzung pro Monat <span class="hint">Entfeuchter, Wasserpumpe, Ladestation</span></h2>
-    <div class="card">
-      <div class="legend">
-        <span><i class="swatch" style="background:var(--purple)"></i>Entfeuchter</span>
-        <span><i class="swatch" style="background:var(--blue)"></i>Wasserpumpe</span>
-        <span><i class="swatch" style="background:var(--amber)"></i>Ladestation</span>
-      </div>
-      <div id="chartDevices"></div>
-    </div>
-
-    <h2>Letzte 14 Tage</h2>
-    <div class="card" style="padding-bottom:14px;">
-      <table id="recentTable"></table>
-    </div>
-
-    <h2>Monatsübersicht (kumuliert) <span class="hint">neuster Monat zuoberst</span></h2>
-    <div class="card" style="padding-bottom:14px;">
-      <div class="table-scroll"><table id="monthlyCumTable"></table></div>
-    </div>
-
     <h2>Jahresvergleich YTD <span class="hint">Year-to-Date vs. Vorjahreszeitraum</span></h2>
     <div class="card" style="padding-bottom:14px;">
       <div class="table-scroll"><table id="ytdTable"></table></div>
@@ -242,6 +250,11 @@
     <h2>Jahresvergleich <span class="hint">alle Jahre, ohne Veränderung</span></h2>
     <div class="card" style="padding-bottom:14px;">
       <div class="table-scroll"><table id="yearlyTable"></table></div>
+    </div>
+
+    <h2>Monatsübersicht (kumuliert) <span class="hint">neuster Monat zuoberst</span></h2>
+    <div class="card" style="padding-bottom:14px;">
+      <div class="table-scroll"><table id="monthlyCumTable"></table></div>
     </div>
 
   </div>
@@ -358,7 +371,6 @@ function renderAll(){
   renderAutarky();
   renderYearly();
   renderDevices();
-  renderTable();
   renderMonthlyCumulativeTable();
   renderYtdTable();
   render360Table();
@@ -406,6 +418,10 @@ function renderKPIs(){
   const autarky7 = cons7 > 0 ? (1 - gridFrom7/cons7) * 100 : null;
   const autarkyPrev7 = consPrev7 > 0 ? (1 - gridFromPrev7/consPrev7) * 100 : null;
 
+  const eigen7 = prod7 > 0 ? (1 - sumRange(last7, 'GridTo_kWh')/prod7) * 100 : null;
+  const eigenPrev7 = prodPrev7 > 0 ? (1 - sumRange(prev7, 'GridTo_kWh')/prodPrev7) * 100 : null;
+  const deltaEigen = (eigen7 !== null && eigenPrev7 !== null) ? (eigen7 - eigenPrev7) : null;
+
   const deltaCons = pctDelta(cons7, consPrev7);
   const deltaProd = pctDelta(prod7, prodPrev7);
   const deltaAutarky = (autarky7 !== null && autarkyPrev7 !== null) ? (autarky7 - autarkyPrev7) : null;
@@ -417,6 +433,9 @@ function renderKPIs(){
     { label: "Produktion (7 Tage)", value: `${fmt(prod7)} <small>kWh</small>`,
       delta: deltaProd !== null ? `${deltaProd>=0?'+':''}${fmt(deltaProd,0)}% vs. Vorwoche` : "",
       deltaCls: deltaProd >= 0 ? 'up' : 'down' },
+    { label: "Eigenverbrauch (7 Tage)", value: eigen7 !== null ? `${fmt(eigen7,0)} <small>%</small>` : "–",
+      delta: deltaEigen !== null ? `${deltaEigen>=0?'+':''}${fmt(deltaEigen,0)} %-Pkte vs. Vorwoche` : "",
+      deltaCls: deltaEigen >= 0 ? 'up' : 'down' },
     { label: "Autarkiegrad (7 Tage)", value: autarky7 !== null ? `${fmt(autarky7,0)} <small>%</small>` : "–",
       delta: deltaAutarky !== null ? `${deltaAutarky>=0?'+':''}${fmt(deltaAutarky,0)} %-Pkte vs. Vorwoche` : "",
       deltaCls: deltaAutarky >= 0 ? 'up' : 'down' },
@@ -440,6 +459,65 @@ function renderKPIs(){
   document.getElementById('kpiGrid').innerHTML = renderCards(mainCards);
   document.getElementById('kpiGridDevices').innerHTML = renderCards(deviceCards);
 }
+
+// ---------- Tooltip (Hover, Klick, Tap) ----------
+const chartTip = document.getElementById('chartTip');
+let activeHit = null;
+function hideTip(){
+  chartTip.style.display = 'none';
+  if (activeHit){ activeHit.classList.remove('active'); activeHit = null; }
+}
+function placeTip(x, y){
+  chartTip.style.display = 'block';
+  const w = chartTip.offsetWidth, h = chartTip.offsetHeight;
+  let left = x + 14, top = y + 14;
+  if (left + w > window.innerWidth - 8) left = x - w - 14;
+  if (left < 8) left = 8;
+  if (top + h > window.innerHeight - 8) top = y - h - 14;
+  if (top < 8) top = 8;
+  chartTip.style.left = left + 'px';
+  chartTip.style.top = top + 'px';
+}
+function buildTip(c, seriesDefs, opts){
+  let html = `<div class="tt-title">${c.title || c.label}</div>`;
+  const row = (color, name, v, s, cls='') => {
+    const val = s && s.abs ? Math.abs(v) : v;
+    const digits = s && s.digits !== undefined ? s.digits : 1;
+    const unit = s && s.unit !== undefined ? s.unit : ' kWh';
+    return `<div class="tt-row ${cls}"><i class="swatch" style="background:${color}"></i><span>${name}</span><b>${fmt(val, digits)}${unit}</b></div>`;
+  };
+  let total = 0;
+  seriesDefs.forEach(s => {
+    const v = c[s.field];
+    if (v === null || v === undefined) return;
+    total += v;
+    html += row(s.color, s.name || s.field, v, s);
+  });
+  if (opts.stacked) html += row('transparent', 'Total', total, null, 'total');
+  (opts.lines || []).forEach(ln => {
+    const v = c[ln.field];
+    if (v === null || v === undefined) return;
+    html += row(ln.color, ln.name || ln.field, v, null);
+  });
+  return html;
+}
+function attachTooltip(container, categories, seriesDefs, opts){
+  const show = e => {
+    const r = e.target.closest ? e.target.closest('.hit') : null;
+    if (!r){ hideTip(); return; }
+    if (activeHit !== r){
+      if (activeHit) activeHit.classList.remove('active');
+      r.classList.add('active'); activeHit = r;
+      chartTip.innerHTML = buildTip(categories[+r.dataset.i], seriesDefs, opts);
+    }
+    placeTip(e.clientX, e.clientY);
+  };
+  container.onmousemove = show;
+  container.onclick = show;
+  container.onmouseleave = hideTip;
+}
+document.addEventListener('click', e => { if (!e.target.closest('.hit')) hideTip(); });
+window.addEventListener('scroll', hideTip, {passive:true});
 
 // ---------- Reusable SVG grouped/stacked bar chart (supports negative values) ----------
 function renderBarChart(containerId, categories, seriesDefs, opts={}){
@@ -551,12 +629,19 @@ function renderBarChart(containerId, categories, seriesDefs, opts={}){
     });
   }
 
+  // Unsichtbare Hit-Flächen pro Kategorie für Hover/Klick-Tooltips
+  let hits = '';
+  categories.forEach((c, i) => {
+    hits += `<rect class="hit" data-i="${i}" x="${(padL + i*groupW).toFixed(1)}" y="${padT}" width="${groupW.toFixed(1)}" height="${innerH}"/>`;
+  });
+
   const svgWidthStyle = scrollable ? `style="width:${W}px; max-width:none;"` : '';
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" ${svgWidthStyle} preserveAspectRatio="xMidYMid meet">
-      ${gridLines}${gridLabels}${bars}${lines}${xLabels}
+      ${gridLines}${gridLabels}${bars}${lines}${xLabels}${hits}
     </svg>
   `;
+  attachTooltip(container, categories, seriesDefs, opts);
 
   if (scrollable){
     // Newest categories are rightmost; auto-scroll so they're visible by default.
@@ -576,23 +661,23 @@ function renderDailyCharts(){
   const rows = filteredByRange(currentRange);
 
   const dailyCats = rows.map(r => ({
-    label: r.Date_Display.slice(0,5),
+    label: r.Date_Display.slice(0,5), title: r.Date_Display,
     Consumption_kWh: r.Consumption_kWh || 0,
     Production_kWh: r.Production_kWh || 0,
   }));
   renderBarChart('chartDaily', dailyCats, [
-    {field:'Consumption_kWh', color: COLORS.consumption},
-    {field:'Production_kWh', color: COLORS.production},
+    {field:'Consumption_kWh', color: COLORS.consumption, name:'Verbrauch'},
+    {field:'Production_kWh', color: COLORS.production, name:'Produktion'},
   ], {height: 200, sparseLabels: true});
 
   const gridCats = rows.map(r => ({
-    label: r.Date_Display.slice(0,5),
+    label: r.Date_Display.slice(0,5), title: r.Date_Display,
     GridFrom_kWh: r.GridFrom_kWh || 0,
     GridTo_kWh: -(r.GridTo_kWh || 0), // Einspeisung wird negativ (unterhalb 0) dargestellt
   }));
   renderBarChart('chartGrid', gridCats, [
-    {field:'GridFrom_kWh', color: COLORS.gridFrom},
-    {field:'GridTo_kWh', color: COLORS.gridTo},
+    {field:'GridFrom_kWh', color: COLORS.gridFrom, name:'Netzbezug'},
+    {field:'GridTo_kWh', color: COLORS.gridTo, name:'Einspeisung', abs:true},
   ], {height: 200, sparseLabels: true});
 }
 
@@ -636,13 +721,13 @@ function renderMonthly(){
     ...m, MA_Consumption: maCons[i], MA_Production: maProd[i]
   }));
   renderBarChart('chartMonthly', withMA, [
-    {field:'Consumption_kWh', color: COLORS.consumption},
-    {field:'Production_kWh', color: COLORS.production},
+    {field:'Consumption_kWh', color: COLORS.consumption, name:'Verbrauch'},
+    {field:'Production_kWh', color: COLORS.production, name:'Produktion'},
   ], {
     height: 210, scrollable: true, catWidth: 46,
     lines: [
-      {field:'MA_Consumption', color:'#8a1a1a'},
-      {field:'MA_Production', color:'#7a5c00'}
+      {field:'MA_Consumption', color:'#8a1a1a', name:'⌀ 12M Verbrauch'},
+      {field:'MA_Production', color:'#7a5c00', name:'⌀ 12M Produktion'}
     ]
   });
 }
@@ -654,7 +739,7 @@ function renderAutarky(){
     Autarky: m.Consumption_kWh > 0 ? Math.max(0, (1 - m.GridFrom_kWh/m.Consumption_kWh) * 100) : 0
   }));
   renderBarChart('chartAutarky', withAutarky, [
-    {field:'Autarky', color: COLORS.production}
+    {field:'Autarky', color: COLORS.production, name:'Autarkiegrad', unit:' %', digits:0}
   ], {height: 170, scrollable: true, catWidth: 46});
 }
 
@@ -683,7 +768,7 @@ function yearlyMonthlyData(metric){
 
 function renderYearly(){
   const { years, categories } = yearlyMonthlyData(currentMetric);
-  const seriesDefs = years.map((y, i) => ({ field: y, color: colorForYearIndex(i) }));
+  const seriesDefs = years.map((y, i) => ({ field: y, color: colorForYearIndex(i), name: y }));
   document.getElementById('yearLegend').innerHTML = years.map((y, i) => `
     <span><i class="swatch" style="background:${colorForYearIndex(i)}"></i>${y}</span>
   `).join('');
@@ -693,38 +778,23 @@ function renderYearly(){
 function renderDevices(){
   const monthly = monthlyAggregates();
   renderBarChart('chartDevices', monthly, [
-    {field:'Entfeuchter_Waschen_kWh', color: COLORS.entfeuchter},
-    {field:'Wasserpumpe_kWh', color: COLORS.wasserpumpe},
-    {field:'Ladestation_kWh', color: COLORS.ladestation},
-  ], {height: 200, stacked:true});
-}
-
-function renderTable(){
-  const rows = DATA.slice(-14).reverse();
-  const head = `<tr><th>Datum</th><th>Verbr.</th><th>Prod.</th><th>Netz⇩</th><th>Netz⇧</th></tr>`;
-  const body = rows.map(r => `
-    <tr>
-      <td>${r.Date_Display}</td>
-      <td>${fmt(r.Consumption_kWh)}</td>
-      <td>${fmt(r.Production_kWh)}</td>
-      <td>${fmt(r.GridFrom_kWh)}</td>
-      <td>${fmt(r.GridTo_kWh)}</td>
-    </tr>
-  `).join('');
-  document.getElementById('recentTable').innerHTML = head + body;
+    {field:'Entfeuchter_Waschen_kWh', color: COLORS.entfeuchter, name:'Entfeuchter'},
+    {field:'Wasserpumpe_kWh', color: COLORS.wasserpumpe, name:'Wasserpumpe'},
+    {field:'Ladestation_kWh', color: COLORS.ladestation, name:'Ladestation'},
+  ], {height: 200, stacked:true, scrollable:true, catWidth:46});
 }
 
 // ---------- Cumulative tables (monthly / YTD / 360-day) ----------
 const METRIC_COLS = [
-  {key:'total', label:'Verbr. Total'},
-  {key:'other', label:'Other'},
-  {key:'ladestation', label:'Ladestation'},
-  {key:'entfeuchter', label:'Entfeuchter'},
-  {key:'wasserpumpe', label:'Wasserpumpe'},
-  {key:'production', label:'Produktion'},
-  {key:'toGrid', label:'toGrid'},
-  {key:'fromGrid', label:'fromGrid'},
-  {key:'eigen', label:'Eigenverbr.', percent:true},
+  {key:'total', label:'Verbr. Total', good:'down'},
+  {key:'other', label:'Other', good:'down'},
+  {key:'ladestation', label:'Ladestation', good:'down'},
+  {key:'entfeuchter', label:'Entfeuchter', good:'down'},
+  {key:'wasserpumpe', label:'Wasserpumpe', good:'down'},
+  {key:'production', label:'Produktion', good:'up'},
+  {key:'toGrid', label:'toGrid', good:'up'},
+  {key:'fromGrid', label:'fromGrid', good:'down'},
+  {key:'eigen', label:'Eigenverbr.', percent:true, good:'up'},
 ];
 
 function metricsFromSums(s){
@@ -777,19 +847,26 @@ function rowHtml(label, metrics){
   return `<tr><td>${label}</td>${METRIC_COLS.map(c=>`<td>${cellVal(metrics,c)}</td>`).join('')}</tr>`;
 }
 
+function deltaColor(diff, good){
+  if (!diff) return null; // 0 bzw. keine Veränderung: neutral
+  const positive = good === 'up' ? diff > 0 : diff < 0;
+  return positive ? 'var(--green)' : 'var(--accent)';
+}
+
 function deltaRowHtml(mCurrent, mPrior){
   const cells = METRIC_COLS.map(c => {
     const a = mCurrent[c.key], b = mPrior[c.key];
     if (a === null || a === undefined || b === null || b === undefined){
       return `<td>–</td>`;
     }
-    if (c.percent){
-      const diff = a - b;
-      return `<td>${diff>=0?'+':''}${fmt(diff,1)} pp</td>`;
-    }
     const diff = a - b;
+    const col = deltaColor(diff, c.good);
+    const style = col ? ` style="color:${col};"` : '';
+    if (c.percent){
+      return `<td${style}><b>${diff>=0?'+':''}${fmt(diff,1)} pp</b></td>`;
+    }
     const pct = b !== 0 ? (diff/b*100) : null;
-    return `<td>${diff>=0?'+':''}${fmt(diff,0)}<br><span style="color:var(--text-dim);font-size:0.65rem;">${pct!==null ? (pct>=0?'+':'')+fmt(pct,1)+'%' : '–'}</span></td>`;
+    return `<td${style}>${diff>=0?'+':''}${fmt(diff,0)}<br><b style="font-size:0.65rem;">${pct!==null ? (pct>=0?'+':'')+fmt(pct,1)+'%' : '–'}</b></td>`;
   }).join('');
   return `<tr><td>Veränderung</td>${cells}</tr>`;
 }
