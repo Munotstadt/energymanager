@@ -1,0 +1,33 @@
+{
+  "name": "energymanager",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+
+  // Custom Route statt workers.dev-Default-URL. Setzt voraus, dass munot.app
+  // als Zone im selben Cloudflare-Account liegt (wie bei energy.munot.app).
+  "routes": [
+    { "pattern": "api.energy.munot.app", "custom_domain": true }
+  ],
+
+  // 15-Minuten-Takt, identisch zur bisherigen car-charging-automation.yml
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+
+  // D1-Datenbank -- bereits bestehende DB "energy".
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "energy",
+      "database_id": "5dfeb585-9598-41c5-a485-52d2831e4ec2"
+    }
+  ],
+
+  // Secrets NICHT hier eintragen, sondern per:
+  //   wrangler secret put SM_EMAIL
+  //   wrangler secret put SM_API_KEY_WRITE
+  //   wrangler secret put UPLOAD_SHARED_SECRET
+  "vars": {
+    "SM_BASE_URL": "https://cloud.solar-manager.ch"
+  }
+}
