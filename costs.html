@@ -124,7 +124,6 @@
     <div class="nav-links">
       <a href="index.html" class="nav-link">Dashboard</a>
       <a href="live.html" class="nav-link">Live</a>
-      <a href="production.html" class="nav-link">Produktion</a>
       <a href="geraete.html" class="nav-link">Geräte</a>
       <a href="car.html" class="nav-link">Auto</a>
       <a href="costs.html" class="nav-link active">Kosten</a>
@@ -362,7 +361,7 @@ function findPriceForMonth(prices, monthKey){
   const monthStart = monthKey + "-01";
   const candidates = prices.filter(p => p.valid_from <= monthStart && p.valid_to >= monthStart);
   if (candidates.length === 0) return null;
-  return candidates.find(p => p.status === "CONFIRMED") || candidates[0];
+  return candidates.find(p => (p.status || "").startsWith("CONFIRMED")) || candidates[0];
 }
 
 function buildCostRows(monthly, prices){
@@ -387,7 +386,7 @@ function buildCostRows(monthly, prices){
       const net = costFromGrid + costToGrid;
       const costLadestation = m.Ladestation_kWh * fromGridRate;
       out = {...out, fromGridRate, toGridRate, fixRate, costFromGrid, costToGrid, net,
-        costLadestation, total: net - costLadestation, priceEstimate: price.status !== "CONFIRMED"};
+        costLadestation, total: net - costLadestation, priceEstimate: !(price.status || "").startsWith("CONFIRMED")};
     }
     return out;
   });
@@ -518,6 +517,21 @@ function renderTotalsRow(rows){
     </tr>`;
 }
 
+function addMonthsToKey(key, offset){
+  let [y, m] = key.split('-').map(Number);
+  m += offset;
+  y += Math.floor((m - 1) / 12);
+  m = ((m - 1) % 12 + 12) % 12 + 1;
+  return `${y}-${pad2(m)}`;
+}
+function clampKey(key, minKey, maxKey){
+  if (key < minKey) return minKey;
+  if (key > maxKey) return maxKey;
+  return key;
+}
+
+let DEFAULT_FROM_KEY = null, DEFAULT_TO_KEY = null;
+
 function populateFilterSelects(){
   const keysAsc = [...new Set(ALL_ROWS.map(r => r.m.key))].sort();
   const fromSel = document.getElementById('filterFrom');
@@ -525,8 +539,14 @@ function populateFilterSelects(){
   const opts = keysAsc.map(k => `<option value="${k}">${monthLabel(k)}</option>`).join('');
   fromSel.innerHTML = opts;
   toSel.innerHTML = opts;
-  fromSel.value = keysAsc[0];
-  toSel.value = keysAsc[keysAsc.length - 1];
+
+  const minKey = keysAsc[0], maxKey = keysAsc[keysAsc.length - 1];
+  const currentKey = todayIsoZurich().slice(0,7);
+  DEFAULT_FROM_KEY = clampKey(addMonthsToKey(currentKey, -9), minKey, maxKey);
+  DEFAULT_TO_KEY = clampKey(addMonthsToKey(currentKey, 12), minKey, maxKey);
+
+  fromSel.value = DEFAULT_FROM_KEY;
+  toSel.value = DEFAULT_TO_KEY;
 }
 
 function applyFilterAndRender(){
@@ -534,8 +554,6 @@ function applyFilterAndRender(){
   const toSel = document.getElementById('filterTo');
   const moySel = document.getElementById('filterMonthOfYear');
   const fromKey = fromSel.value, toKey = toSel.value, moy = moySel.value;
-  const keysAsc = [...new Set(ALL_ROWS.map(r => r.m.key))].sort();
-  const minKey = keysAsc[0], maxKey = keysAsc[keysAsc.length - 1];
 
   const filtered = ALL_ROWS.filter(r =>
     r.m.key >= fromKey && r.m.key <= toKey &&
@@ -544,7 +562,7 @@ function applyFilterAndRender(){
   const sorted = sortRows(filtered);
   renderCostsTable(sorted);
 
-  const isFiltered = fromKey !== minKey || toKey !== maxKey || moy !== "";
+  const isFiltered = fromKey !== DEFAULT_FROM_KEY || toKey !== DEFAULT_TO_KEY || moy !== "";
   renderTotalsRow(isFiltered ? sorted : null);
 
   CURRENT_ROWS = sorted;
@@ -685,6 +703,5 @@ async function load(){
 
 load();
 </script>
-  <script src="https://munotstadt.github.io/db_admin/assets/improvements-button.js" data-app="energymanager" data-position="left"></script>
 </body>
 </html>
