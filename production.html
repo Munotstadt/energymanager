@@ -770,7 +770,8 @@ function varianceColor(v, scaleAbs){
   if (v === null || v === undefined || isNaN(v)) return '';
   const intensity = Math.min(1, Math.abs(v) / scaleAbs);
   const alpha = (intensity * 0.55).toFixed(2);
-  return `background:rgba(227,6,19,${alpha});`;
+  // Unterproduktion (Produktion < Validation) = rot, Ueberproduktion (Produktion > Validation) = gruen
+  return v < 0 ? `background:rgba(227,6,19,${alpha});` : `background:rgba(31,157,85,${alpha});`;
 }
 
 let lastTableRows = [];
