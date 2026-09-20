@@ -1,4 +1,3 @@
-// retry 
 // energy_production Worker
 // Serves data for the new "Tagesansicht" (day view) subpage.
 //
