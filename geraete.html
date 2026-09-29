@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --red:#E30613;
@@ -98,6 +99,24 @@
   .table-scroll table{min-width:900px;}
   .table-vscroll{max-height:70vh; overflow-y:auto;}
 
+  .rangebar{display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:10px;}
+  .rangebar .field{display:flex; flex-direction:column; gap:4px;}
+  .rangebar label{font-size:0.68rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.03em;}
+  .rangebar input[type="date"]{
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:6px 8px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); color:var(--ink); background:#fff;
+  }
+  .btn{
+    font-family:'Inter',sans-serif; font-weight:500; font-size:13px; padding:7px 14px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+    cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{background:var(--grey-100);}
+  .btn.primary{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .btn.primary:hover{background:#000;}
+  .btn:disabled{opacity:0.5; cursor:not-allowed;}
+  .rangebar .spacer{flex:1 1 auto;}
+
   #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
   .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
   a{color:var(--accent);}
@@ -136,14 +155,22 @@
       </div>
     </div>
 
-    <div class="tabs" id="rangeTabs">
-      <button type="button" class="tab" data-range="30">30T</button>
-      <button type="button" class="tab" data-range="90">90T</button>
-      <button type="button" class="tab active" data-range="365">365T</button>
-    </div>
-
     <h2>Tagesübersicht <span class="hint">neuster Tag zuoberst</span></h2>
     <div class="card" style="padding-bottom:14px;">
+      <div class="rangebar">
+        <div class="field">
+          <label for="dateFrom">Von</label>
+          <input type="date" id="dateFrom">
+        </div>
+        <div class="field">
+          <label for="dateTo">Bis</label>
+          <input type="date" id="dateTo">
+        </div>
+        <button type="button" class="btn primary" id="applyRangeBtn">Anwenden</button>
+        <button type="button" class="btn" id="defaultRangeBtn">90 Tage</button>
+        <div class="spacer"></div>
+        <button type="button" class="btn" id="exportExcelBtn">Excel Export</button>
+      </div>
       <div class="table-scroll">
         <div class="table-vscroll">
           <table id="dailyTable"></table>
@@ -163,7 +190,8 @@ const CACHE_KEY = "munotstadt_devices_daily_cache_v1";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 Minuten
 
 let DATA = [];
-let currentRange = "365";
+let rangeFrom = null;
+let rangeTo = null;
 
 function fmt(n, digits=1){
   if (n === null || n === undefined || isNaN(n)) return "–";
@@ -239,10 +267,47 @@ function applyData(rows, sourceLabel){
   document.getElementById('subline').textContent =
     `${DATA[0].Date_Display} – ${DATA[DATA.length-1].Date_Display} · ${DATA.length} Tage`;
   document.getElementById('footerInfo').textContent = `Datenquelle: ${sourceLabel}`;
-  renderTable();
+  if (rangeFrom === null || rangeTo === null){
+    applyDefaultRange();
+  } else {
+    renderTable();
+  }
   renderProductionChart();
   return true;
 }
+
+// ---------- Datumsbereich (von/bis -> Anwenden), Default 90 Tage ----------
+function applyDefaultRange(){
+  if (DATA.length === 0) return;
+  const toISO = DATA[DATA.length - 1].Date_ISO;
+  const toUTC = Date.UTC(...toISO.split('-').map((x,i)=> i===1 ? Number(x)-1 : Number(x)));
+  const fromISO = isoFromUTC(toUTC - 89 * 86400000); // 90 Tage inkl. bis-Datum
+  rangeFrom = fromISO;
+  rangeTo = toISO;
+  document.getElementById('dateFrom').value = rangeFrom;
+  document.getElementById('dateTo').value = rangeTo;
+  renderTable();
+}
+
+document.getElementById('defaultRangeBtn').addEventListener('click', () => {
+  applyDefaultRange();
+});
+
+document.getElementById('applyRangeBtn').addEventListener('click', () => {
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  if (!from || !to){
+    alert('Bitte Von- und Bis-Datum angeben.');
+    return;
+  }
+  if (from > to){
+    alert('"Von" muss vor oder gleich "Bis" liegen.');
+    return;
+  }
+  rangeFrom = from;
+  rangeTo = to;
+  if (DATA.length) renderTable();
+});
 
 // ---------- Produktions-Chart (letzte 45 & nächste 15 Tage, je letzte 5 Jahre) ----------
 const YEAR_COLORS = ['#E30613','#F0501A','#F58B00','#F9B800','#FFDE59']; // k=0 (aktuell/rot) ... k=4 (vor 4 Jahren/gelb)
@@ -400,25 +465,50 @@ async function load(){
   }
 }
 
-// ---------- Range tabs (bestimmen die Tabellenlaenge) ----------
-document.getElementById('rangeTabs').addEventListener('click', e => {
-  const tab = e.target.closest('.tab');
-  if (!tab) return;
-  currentRange = tab.dataset.range;
-  document.querySelectorAll('#rangeTabs .tab').forEach(b => b.classList.toggle('active', b === tab));
-  if (DATA.length) renderTable();
-});
+function rowsInRange(){
+  if (rangeFrom === null || rangeTo === null) return DATA.slice();
+  return DATA.filter(r => r.Date_ISO >= rangeFrom && r.Date_ISO <= rangeTo);
+}
 
 function renderTable(){
-  const n = parseInt(currentRange, 10);
-  const rows = DATA.slice(-n).slice().reverse(); // neuster Tag zuoberst
+  const rows = rowsInRange().slice().reverse(); // neuster Tag zuoberst
   const head = `<thead><tr><th>Datum</th>${METRIC_COLS.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead>`;
   const body = `<tbody>${rows.map(r => {
     const metrics = metricsFromRow(r);
     return `<tr><td>${r.Date_Display}</td>${METRIC_COLS.map(c=>`<td>${cellVal(metrics,c)}</td>`).join('')}</tr>`;
   }).join('')}</tbody>`;
   document.getElementById('dailyTable').innerHTML = head + body;
+  const exportBtn = document.getElementById('exportExcelBtn');
+  if (exportBtn) exportBtn.disabled = rows.length === 0 || typeof XLSX === 'undefined';
 }
+
+// ---------- Excel-Export der aktuell gefilterten Tabelle ----------
+function exportToExcel(){
+  if (typeof XLSX === 'undefined'){
+    alert('Excel-Export nicht verfügbar (xlsx-Bibliothek konnte nicht geladen werden).');
+    return;
+  }
+  const rows = rowsInRange().slice().reverse(); // neuster Tag zuoberst, wie in der Tabelle
+  if (rows.length === 0){
+    alert('Keine Daten im gewählten Zeitraum.');
+    return;
+  }
+  const headRow = ['Datum', ...METRIC_COLS.map(c => c.label)];
+  const bodyRows = rows.map(r => {
+    const metrics = metricsFromRow(r);
+    return [r.Date_Display, ...METRIC_COLS.map(c => {
+      const v = metrics[c.key];
+      return (v === null || v === undefined) ? null : v;
+    })];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([headRow, ...bodyRows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Geraete");
+  const stamp = `${rangeFrom}_${rangeTo}`;
+  XLSX.writeFile(wb, `munotstadt-geraete_${stamp}.xlsx`);
+}
+
+document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
 
 load();
 </script>
