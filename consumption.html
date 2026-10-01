@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Verbrauch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
+    --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
+    --accent:#E30613; --accent-dim:#fdeceb;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --yellow:#d4a900; --purple:#7c3aed; --teal:#0f9b8e;
+    --grid:#e8e8e8;
+    --sun-fill:#fff3b0;
+    --bar-yellow:#FFD400;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:24px 20px 60px;}
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+  header.topbar .nav-links{display:flex; gap:2px;}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .logout-link{
+    text-decoration:none; color:var(--grey-600); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link:hover{background:var(--grey-100);}
+  header.topbar .settings-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .settings-link:hover{background:var(--grey-100);}
+
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
+  .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:20px;}
+  h2{
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1rem;
+    margin:28px 0 10px; color:var(--text);
+  }
+  h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
+
+  .date-picker{display:flex; align-items:center; gap:8px; font-size:0.85rem;}
+  .date-picker label{color:var(--text-dim); font-size:0.78rem;}
+  .date-picker input[type="date"]{
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:5px 8px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); color:var(--ink); background:#fff;
+  }
+  .date-picker button{
+    font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:500; padding:6px 12px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+    cursor:pointer;
+  }
+  .date-picker button:hover{background:var(--grey-100);}
+
+  .range-toggle-btn{
+    font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:500; padding:6px 14px;
+    border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);
+    cursor:pointer;
+  }
+  .range-toggle-btn:hover{background:var(--grey-100);}
+  .range-toggle-btn.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+
+  .card{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:16px 18px 12px; margin-bottom:6px;
+  }
+  .top-row{display:flex; gap:16px; align-items:stretch; flex-wrap:wrap;}
+  .top-row .col-left{flex:1 1 320px; min-width:280px;}
+  .top-row .col-right{flex:1 1 300px; min-width:280px;}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .kpi{
+    background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius);
+    padding:14px 16px 12px; border-left:3px solid var(--yellow);
+  }
+  .kpi .label{font-size:0.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .kpi .value{font-family:'IBM Plex Mono',monospace; font-size:1.25rem; font-weight:600; margin-top:4px;}
+  .kpi .value small{font-size:0.68rem; color:var(--text-dim); font-weight:400;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; font-size:0.75rem; color:var(--text-dim);}
+  .legend.legend-footer{
+    margin:10px 0 4px; padding-top:8px; border-top:1px solid var(--grey-100);
+    font-size:0.7rem; gap:10px;
+  }
+  .legend .item{display:flex; align-items:center; gap:5px;}
+  .legend .sw{width:10px; height:10px; border-radius:2px; display:inline-block;}
+  .legend .sw.line{border-radius:0; height:2px; width:14px; margin-top:4px;}
+  .legend .sw.dashed{border-radius:0; height:0; width:14px; margin-top:4px; border-top:2px dashed;}
+  .legend .sw.area{border-radius:2px;}
+
+  .chart-tooltip{
+    position:fixed; z-index:50; background:var(--ink); color:#fff; font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem; padding:8px 10px; border-radius:var(--radius); pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.25); display:none; line-height:1.5; white-space:nowrap;
+  }
+  .chart-tooltip .tt-time{color:#bbb; font-size:0.68rem; margin-bottom:3px;}
+  .chart-tooltip .tt-row{display:flex; align-items:center; gap:6px;}
+  .chart-tooltip .tt-sw{width:8px; height:8px; border-radius:2px; display:inline-block; flex-shrink:0;}
+  svg.linechart, svg.rangebar{cursor:crosshair;}
+
+  #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
+  .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
+  a{color:var(--accent);}
+  .kpi-grid.five{grid-template-columns:repeat(5,1fr);}
+  @media(max-width:760px){.kpi-grid,.kpi-grid.five{grid-template-columns:repeat(2,1fr);}}
+  .chip{display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:0.72rem; padding:2px 8px; border-radius:10px; background:var(--grey-100); color:var(--ink); margin-right:6px;}
+  .chip.on{background:var(--accent-dim); color:var(--red);}
+  .formula-box{font-family:'IBM Plex Mono',monospace; font-size:0.78rem; line-height:1.7; color:var(--ink);}
+  .formula-box .k{color:var(--text-dim);}
+  .info-note{margin-top:10px; font-size:0.76rem; color:var(--text-dim); background:var(--grey-100); border-left:3px solid var(--red); border-radius:var(--radius); padding:8px 10px; line-height:1.45;}
+  .info-note b{color:var(--ink);}
+  .btn{font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:500; padding:6px 12px; border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink); cursor:pointer;}
+  .btn:hover{background:var(--grey-100);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Munotstadt <span>Energy</span></div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="production.html" class="nav-link">Produktion</a>
+      <a href="consumption.html" class="nav-link active">Verbrauch</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
+      <a href="car.html" class="nav-link">Auto</a>
+      <a href="costs.html" class="nav-link">Kosten</a>
+    </div>
+    <a href="settings.html" class="settings-link">&#9881; Settings</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
+  </div>
+</header>
+<div class="wrap">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1>Verbrauchsvalidierung</h1>
+      <div class="sub" id="subline">Lade Daten...</div>
+    </div>
+    <div class="date-picker">
+      <label for="dayInput">Tag</label>
+      <input type="date" id="dayInput">
+      <button type="button" id="yesterdayBtn">Gestern</button>
+    </div>
+  </div>
+
+  <div id="status">Lade Daten...</div>
+  <div id="content" style="display:none;">
+
+    <div class="top-row">
+      <div class="col-left">
+        <h2>Tageswert <span class="hint">Grundverbrauch</span></h2>
+        <div class="kpi-grid">
+          <div class="kpi" style="border-left-color:var(--red);">
+            <div class="label">Grundverbrauch (Ist)</div>
+            <div class="value" id="kpiBase">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--blue);">
+            <div class="label">Modell (Soll)</div>
+            <div class="value" id="kpiModel">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--amber);">
+            <div class="label">Varianz</div>
+            <div class="value" id="kpiVar">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--teal);">
+            <div class="label">Auto-Laden (ausgeschlossen)</div>
+            <div class="value" id="kpiCharge">–</div>
+          </div>
+          <div class="kpi" style="border-left-color:var(--grey-600);">
+            <div class="label">Gesamtverbrauch</div>
+            <div class="value" id="kpiTotal">–</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;" id="driverChips"></div>
+        <div class="info-note">
+          <b>Alle KPIs, Charts und die Tabelle basieren auf dem ladestationsbereinigten Grundverbrauch</b>
+          (Gesamtverbrauch − Auto-Laden). Das Laden des Autos fliesst weder in Ist noch in Soll oder Varianz ein.
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <div class="formula-box" id="formulaBox">–</div>
+        </div>
+      </div>
+      <div class="col-right">
+        <h2>Verbrauch im Vergleich <span class="hint">kWh, Grundverbrauch am gleichen Kalendertag</span></h2>
+        <div class="card">
+          <div id="chartBar"></div>
+          <div class="legend legend-footer" id="legendBar"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="top-row" style="margin-top:6px;">
+      <div class="col-left">
+        <h2>Zusammensetzung <span class="hint">Modellbeiträge des gewählten Tages, kWh</span></h2>
+        <div class="card">
+          <div id="chartBreakdown"></div>
+          <div class="legend legend-footer" id="legendBreakdown"></div>
+        </div>
+      </div>
+      <div class="col-right">
+        <h2>Temperatur vs. Verbrauch <span class="hint">letzte 365 Tage, Grundverbrauch</span></h2>
+        <div class="card">
+          <div id="chartScatter"></div>
+          <div class="legend legend-footer" id="legendScatter"></div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Ist vs. Soll <span class="hint">Grundverbrauch je Tag</span></h2>
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <button type="button" class="range-toggle-btn active" data-days="30">30 Tage</button>
+        <button type="button" class="range-toggle-btn" data-days="90">90 Tage</button>
+        <button type="button" class="range-toggle-btn" data-days="365">365 Tage</button>
+      </div>
+      <div class="legend" id="legendIstSoll"></div>
+      <div id="chartIstSoll"></div>
+    </div>
+
+    <h2>Grundverbrauch im Jahresvergleich <span class="hint">letzte 30 Tage, gleicher Kalendertag Vorjahre</span></h2>
+    <div class="card">
+      <div class="legend" id="legendYearCompare"></div>
+      <div id="chartYearCompare"></div>
+    </div>
+
+    <h2>Modell &amp; Annahmen <span class="hint">Güte nach Zeitfenster, Treiber, verworfene Kandidaten</span></h2>
+    <div class="card">
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-family:'IBM Plex Mono',monospace; font-size:0.78rem;" id="windowTable"></table>
+      </div>
+      <div class="formula-box" style="margin-top:12px; font-family:'Inter',sans-serif; font-size:0.8rem; line-height:1.55;">
+        <b>Treiber im Modell:</b> At home (Anwesenheit), Legionellenschutz (Boiler), Heizgradtage (max(0; 15 °C − Tagesmittel)),
+        Heizung (Betriebsgrad 0–1), Wochenende (Sa/So).<br>
+        <b>Schätzung:</b> OLS über die gesamte Historie (ca. 3 Jahre), einmalige 3σ-Ausreisserbereinigung. Die Fenster 6/12 Monate dienen nur der Bewertung, nicht der Schätzung.
+        Koeffizienten stehen in <code>energy/consumption_formula</code> (Neuberechnung: <code>analysis/fit_consumption_model.py</code>).<br>
+        <b>Bewusst nicht enthalten:</b> Auto-Laden (aus der Zielgrösse entfernt), Quooker (zeitgleich mit Anwesenheit, kein eigener Erklärungsbeitrag),
+        Tageslänge (Koeffizient ≈ −0.2 kWh/h, keine Verbesserung in der Kreuzvalidierung; Korrelation mit Heizgradtagen −0.80).<br>
+        <b>Wochenende &amp; Legionellenschutz</b> sind teilweise überlappend (Legionellenlauf meist Samstag/Donnerstag); die Einzeleffekte sind daher mit etwas Unschärfe geschätzt.
+      </div>
+    </div>
+
+    <h2>Validierungstabelle <span class="hint" id="tableHint">letzte 60 Tage</span></h2>
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <div class="date-picker">
+          <label for="rangeFrom">Von</label>
+          <input type="date" id="rangeFrom">
+        </div>
+        <div class="date-picker">
+          <label for="rangeTo">Bis</label>
+          <input type="date" id="rangeTo">
+        </div>
+        <button type="button" class="btn" id="rangeApplyBtn">Anwenden</button>
+        <button type="button" class="btn" id="rangeDefaultBtn">Default (60 Tage)</button>
+        <button type="button" class="btn" id="csvExportBtn">CSV Export</button>
+        <span style="font-size:0.72rem; color:var(--text-dim); margin-left:auto;" id="formulaInfo"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="dataTable" style="width:100%; border-collapse:collapse; font-family:'IBM Plex Mono',monospace; font-size:0.78rem;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--ink); text-align:right;">
+              <th style="text-align:left; padding:6px 8px;">Datum</th>
+              <th style="padding:6px 8px;">Gesamt</th>
+              <th style="padding:6px 8px;">Auto</th>
+              <th style="padding:6px 8px;">Grundverbr.</th>
+              <th style="padding:6px 8px;">Validation</th>
+              <th style="padding:6px 8px;">At home</th>
+              <th style="padding:6px 8px;">Legionellen</th>
+              <th style="padding:6px 8px;">Heizung</th>
+              <th style="padding:6px 8px;">WE</th>
+              <th style="padding:6px 8px;">Temp °C</th>
+              <th style="padding:6px 8px;">Varianz</th>
+              <th style="padding:6px 8px;">Varianz30d</th>
+            </tr>
+          </thead>
+          <tbody id="dataTableBody"></tbody>
+        </table>
+      </div>
+      <div id="tableError" style="color:var(--red); font-size:0.75rem; margin-top:8px; display:none;"></div>
+    </div>
+
+  </div>
+  <div class="footer" id="footerInfo">
+    Datenquelle: energy_production-api (/consumption-table) · Verbrauch: energy/solarmanager_data · Temperatur: meteo/meteo_klo_daily · At home, Legionellenschutz &amp; Heizung: seestrasse52b/seestrasse52b_values (ParameterID 2 / 6 / 24) · Koeffizienten: energy/consumption_formula · Grundverbrauch = Gesamt − Auto-Laden
+  </div>
+</div>
+<div class="chart-tooltip" id="chartTooltip"></div>
+
+<script>
+const API_BASE = "https://api.energy.munot.app/api";
+
+function fmt(n, digits=1){
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return n.toLocaleString('de-CH', {minimumFractionDigits:digits, maximumFractionDigits:digits});
+}
+function fmtSigned(n, digits=1){
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return (n > 0 ? '+' : '') + fmt(n, digits);
+}
+function zurichDateStr(offsetDays){
+  const d = new Date(Date.now() + offsetDays*24*60*60*1000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone:'Europe/Zurich', year:'numeric', month:'2-digit', day:'2-digit' }).format(d);
+}
+const zurichTodayStr = () => zurichDateStr(0);
+const zurichYesterdayStr = () => zurichDateStr(-1);
+function addDays(dateStr, n){
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0,10);
+}
+function dm(dateStr){
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-CH', {day:'2-digit', month:'2-digit'});
+}
+
+async function fetchJson(path, params){
+  const url = new URL(`${API_BASE}/${path}`);
+  Object.entries(params||{}).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url, {cache:"no-store", credentials:"include"});
+  if (!res.ok) throw new Error(`API HTTP ${res.status} (${path})`);
+  return res.json();
+}
+const empty = (msg='Keine Daten.') => `<div style="color:var(--text-dim); font-size:0.85rem; padding:30px 0; text-align:center;">${msg}</div>`;
+
+function renderLegend(containerId, items){
+  document.getElementById(containerId).innerHTML = items.map(it => {
+    const swClass = it.style === 'dashed' ? 'sw dashed' : (it.style === 'line' ? 'sw line' : 'sw');
+    const styleAttr = it.style === 'dashed' ? `border-color:${it.color}` : `background:${it.color}`;
+    return `<span class="item"><span class="${swClass}" style="${styleAttr}"></span>${it.label}</span>`;
+  }).join('');
+}
+
+function yAxisGrid(w, padL, padR, padT, plotH, vMin, vMax, ticks, digits=0){
+  let s = '';
+  for (let i=0; i<=ticks; i++){
+    const v = vMin + (vMax - vMin) * i / ticks;
+    const yy = padT + plotH - (v - vMin) / (vMax - vMin) * plotH;
+    s += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`;
+    s += `<text x="${padL-6}" y="${(yy+3).toFixed(1)}" text-anchor="end" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${fmt(v,digits)}</text>`;
+  }
+  return s;
+}
+
+
+// ---------- Saeule: 0->Ist (rot), Ist->Max (grau), Min/Max schwarz mit Datum, Ist/Soll/Median/Mittel/Schnitt30T als Linien ----------
+function renderRangeBar(containerId, data, opts={}){
+  const el = document.getElementById(containerId);
+  const w = el.clientWidth > 0 ? el.clientWidth : 320;
+  const h = opts.height || 300;
+  const padL = 44, padR = 118, padT = 18, padB = 26;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const { min, minDate, max, maxDate, actual, model, median, mean, avg30 } = data;
+  const allVals = [min, max, actual, model, median, mean, avg30].filter(v => v !== null && v !== undefined && !isNaN(v));
+  if (!allVals.length){ el.innerHTML = empty('Keine Daten für diesen Tag.'); return; }
+  const scaleMax = Math.max(...allVals) * 1.15 || 1;
+  const y = v => padT + plotH - v / scaleMax * plotH;
+  const barCx = padL + plotW * 0.30;
+  const barW = Math.min(80, plotW * 0.45);
+  const bx0 = barCx - barW/2, bx1 = barCx + barW/2;
+
+  let svg = yAxisGrid(w, padL, padR, padT, plotH, 0, scaleMax, 5);
+  svg += `<rect x="${bx0.toFixed(1)}" y="${padT}" width="${barW}" height="${plotH}" rx="4" fill="var(--grey-100)"/>`;
+  if (actual !== null && actual !== undefined && !isNaN(actual)){
+    const yAct = y(actual);
+    svg += `<rect x="${bx0.toFixed(1)}" y="${yAct.toFixed(1)}" width="${barW}" height="${(padT+plotH-yAct).toFixed(1)}" rx="4" fill="var(--red)" fill-opacity="0.85"/>`;
+    if (max !== null && max !== undefined && !isNaN(max) && max > actual){
+      const yMax = y(max);
+      svg += `<rect x="${bx0.toFixed(1)}" y="${yMax.toFixed(1)}" width="${barW}" height="${(yAct-yMax).toFixed(1)}" fill="var(--grey-300)"/>`;
+    }
+  }
+  const tx1 = bx0 - 6, tx2 = bx1 + 6;
+  const placed = [];
+  function marker(value, color, label, dash, width=2){
+    if (value === null || value === undefined || isNaN(value)) return '';
+    const yy = y(value);
+    let ly = yy;
+    while (placed.some(p => Math.abs(p - ly) < 13)) ly += 13;
+    placed.push(ly);
+    const da = dash ? ` stroke-dasharray="${dash}"` : '';
+    return `<line x1="${tx1.toFixed(1)}" y1="${yy.toFixed(1)}" x2="${tx2.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="${color}" stroke-width="${width}"${da}/>`
+      + `<text x="${(tx2+8).toFixed(1)}" y="${(ly+3).toFixed(1)}" font-size="10" font-family="IBM Plex Mono, monospace" fill="${color}">${label}</text>`;
+  }
+  svg += marker(max, 'var(--ink)', `Max ${fmt(max,1)} (${maxDate ?? '–'})`);
+  svg += marker(min, 'var(--ink)', `Min ${fmt(min,1)} (${minDate ?? '–'})`);
+  svg += marker(avg30, 'var(--teal)', `Schnitt 30T ${fmt(avg30,1)}`, '6,2');
+  svg += marker(mean, 'var(--purple)', `Mean ${fmt(mean,1)}`, '2,3');
+  svg += marker(median, 'var(--blue)', `Median ${fmt(median,1)}`, '5,3');
+  svg += marker(model, 'var(--blue)', `Soll ${fmt(model,1)}`);
+  svg += marker(actual, 'var(--ink)', `Ist ${fmt(actual,1)}`, null, 2.5);
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">${svg}</svg>`;
+}
+
+// ---------- Guete nach Zeitfenster (Fit: volle Historie, Bewertung: letzte 6 / 12 Monate) ----------
+function windowStats(rows){
+  const pts = rows.filter(r => r.base !== null && r.validation !== null);
+  if (pts.length < 5) return null;
+  const mean = pts.reduce((a,r)=>a+r.base,0)/pts.length;
+  const ssTot = pts.reduce((a,r)=>a+(r.base-mean)**2,0);
+  const ssRes = pts.reduce((a,r)=>a+(r.base-r.validation)**2,0);
+  const bias = pts.reduce((a,r)=>a+(r.base-r.validation),0)/pts.length;
+  return { n: pts.length, r2: ssTot > 0 ? 1 - ssRes/ssTot : null, rmse: Math.sqrt(ssRes/pts.length), bias,
+           avgBase: mean, avgModel: pts.reduce((a,r)=>a+r.validation,0)/pts.length };
+}
+function renderWindowTable(rows, formula){
+  const defs = [['Letzte 6 Monate', 183], ['Letzte 12 Monate', 365]];
+  const th = 'padding:6px 8px; text-align:right;';
+  let html = `<thead><tr style="border-bottom:2px solid var(--ink);"><th style="${th} text-align:left;">Bewertungsfenster</th><th style="${th}">Tage</th><th style="${th}">Ø Ist</th><th style="${th}">Ø Soll</th><th style="${th}">Bias</th><th style="${th}">RMSE</th><th style="${th}">R²</th></tr></thead><tbody>`;
+  defs.forEach(([label, days]) => {
+    const st = windowStats(rows.slice(-days));
+    html += st ? `<tr style="border-bottom:1px solid var(--grey-100);"><td style="padding:5px 8px; text-align:left;">${label}</td>
+      <td style="${th}">${st.n}</td><td style="${th}">${fmt(st.avgBase)}</td><td style="${th}">${fmt(st.avgModel)}</td>
+      <td style="${th}">${fmtSigned(st.bias,2)}</td><td style="${th}">${fmt(st.rmse,2)}</td><td style="${th}">${fmt(st.r2,3)}</td></tr>` : '';
+  });
+  if (formula) html += `<tr style="border-top:1px solid var(--grey-300); color:var(--text-dim);"><td style="padding:5px 8px; text-align:left;">Fit (gesamte Historie)</td><td style="${th}">${formula.n_train}</td><td style="${th}">–</td><td style="${th}">–</td><td style="${th}">0.00</td><td style="${th}">${fmt(formula.rmse,2)}</td><td style="${th}">${fmt(formula.r2,3)}</td></tr>`;
+  html += `</tbody>`;
+  document.getElementById('windowTable').innerHTML = html;
+}
+
+// ---------- Zusammensetzung des Modellwerts (gestapelter Balken) + Ist-Marker ----------
+function renderBreakdown(containerId, row, formula){
+  const el = document.getElementById(containerId);
+  if (!row || !formula || row.validation === null){
+    el.innerHTML = empty('Keine Modelldaten für diesen Tag.');
+    return;
+  }
+  const parts = [
+    {label:'Grundlast', v: formula.intercept, color:'#9aa0a6'},
+    {label:'At home', v: formula.coef_at_home * (row.atHome ?? 0), color:'var(--red)'},
+    {label:'Legionellenschutz', v: formula.coef_legionella * (row.legionella ?? 0), color:'var(--purple)'},
+    {label:'Heizgradtage', v: formula.coef_hdd * (row.hdd ?? 0), color:'var(--blue)'},
+    {label:'Heizung', v: formula.coef_heizung * (row.heizung ?? 0), color:'var(--teal)'},
+    {label:'Wochenende', v: formula.coef_weekend * (row.weekend ?? 0), color:'var(--amber)'},
+  ];
+  const w = el.clientWidth > 0 ? el.clientWidth : 320;
+  const h = 300, padL = 44, padR = 120, padT = 18, padB = 26;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const total = parts.reduce((a,p)=>a+Math.max(0,p.v),0);
+  const vMax = Math.max(total, row.base ?? 0, 1) * 1.15;
+  const y = v => padT + plotH - v / vMax * plotH;
+  const barW = Math.min(80, plotW * 0.45), bx0 = padL + plotW*0.3 - barW/2;
+
+  let svg = yAxisGrid(w, padL, padR, padT, plotH, 0, vMax, 5);
+  let acc = 0;
+  const labels = [];
+  parts.forEach(p => {
+    const v = Math.max(0, p.v);
+    if (v <= 0) return;
+    const y0 = y(acc), y1 = y(acc + v);
+    svg += `<rect x="${bx0.toFixed(1)}" y="${y1.toFixed(1)}" width="${barW}" height="${(y0-y1).toFixed(1)}" fill="${p.color}"><title>${p.label}: ${fmt(v,1)} kWh</title></rect>`;
+    labels.push({yy:(y0+y1)/2, text:`${p.label} ${fmt(v,1)}`, color:p.color});
+    acc += v;
+  });
+  // Labels rechts, ueberlappungsfrei
+  let lastY = Infinity;
+  labels.sort((a,b)=>b.yy-a.yy).forEach(l => {
+    let ly = l.yy;
+    if (lastY - ly < 13) ly = lastY - 13;
+    lastY = ly;
+    svg += `<text x="${(bx0+barW+8).toFixed(1)}" y="${(ly+3).toFixed(1)}" font-size="10" font-family="IBM Plex Mono, monospace" fill="${l.color}">${l.text}</text>`;
+  });
+  // Soll- und Ist-Linie
+  const yModel = y(row.validation);
+  svg += `<line x1="${bx0-6}" y1="${yModel.toFixed(1)}" x2="${bx0+barW+6}" y2="${yModel.toFixed(1)}" stroke="var(--blue)" stroke-width="2"/>`;
+  if (row.base !== null){
+    const yAct = y(row.base);
+    svg += `<line x1="${bx0-6}" y1="${yAct.toFixed(1)}" x2="${bx0+barW+6}" y2="${yAct.toFixed(1)}" stroke="var(--ink)" stroke-width="2.5"/>`;
+    svg += `<text x="${(bx0-10).toFixed(1)}" y="${(yAct+3).toFixed(1)}" text-anchor="end" font-size="10" font-family="IBM Plex Mono, monospace" fill="var(--ink)">Ist ${fmt(row.base,1)}</text>`;
+  }
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">${svg}</svg>`;
+}
+
+// ---------- Streudiagramm: Temperatur (x) vs. Grundverbrauch (y), at home farbig + Modelllinien ----------
+function renderScatter(containerId, rows, formula){
+  const el = document.getElementById(containerId);
+  const pts = rows.filter(r => r.temp !== null && r.base !== null);
+  if (!pts.length){ el.innerHTML = empty(); return; }
+  const w = el.clientWidth > 0 ? el.clientWidth : 320;
+  const h = 300, padL = 44, padR = 12, padT = 12, padB = 30;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const tMin = Math.floor(Math.min(...pts.map(p=>p.temp)) - 1);
+  const tMax = Math.ceil(Math.max(...pts.map(p=>p.temp)) + 1);
+  const vMax = Math.max(...pts.map(p=>p.base)) * 1.1;
+  const x = t => padL + (t - tMin) / (tMax - tMin) * plotW;
+  const y = v => padT + plotH - v / vMax * plotH;
+
+  let svg = yAxisGrid(w, padL, padR, padT, plotH, 0, vMax, 5);
+  for (let t = Math.ceil(tMin/5)*5; t <= tMax; t += 5){
+    svg += `<line x1="${x(t).toFixed(1)}" y1="${padT+plotH}" x2="${x(t).toFixed(1)}" y2="${padT+plotH+4}" stroke="var(--text-dim)"/>`;
+    svg += `<text x="${x(t).toFixed(1)}" y="${h-10}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)">${t}°</text>`;
+  }
+  pts.forEach(p => {
+    const away = (p.atHome ?? 1) < 0.5;
+    const legio = (p.legionella ?? 0) >= 0.5;
+    const color = legio ? 'var(--purple)' : (away ? 'var(--grey-600)' : 'var(--red)');
+    svg += `<circle cx="${x(p.temp).toFixed(1)}" cy="${y(p.base).toFixed(1)}" r="3" fill="${color}" fill-opacity="0.55"><title>${p.date}: ${fmt(p.base,1)} kWh bei ${fmt(p.temp,1)} °C</title></circle>`;
+  });
+  // Modelllinien (at home = 1 / 0, ohne Legionellenschutz)
+  if (formula){
+    const heizAvg = pts.reduce((a,p)=>a+(p.heizung ?? 0),0) / pts.length;
+    [{home:1, color:'var(--red)'}, {home:0, color:'var(--grey-600)'}].forEach(m => {
+      const f = t => formula.intercept + formula.coef_at_home*m.home + formula.coef_hdd*Math.max(0, formula.hdd_base - t) + formula.coef_heizung*heizAvg;
+      const d = [];
+      for (let t = tMin; t <= tMax; t += 0.5) d.push(`${d.length?'L':'M'} ${x(t).toFixed(1)} ${y(Math.max(0,f(t))).toFixed(1)}`);
+      svg += `<path d="${d.join(' ')}" fill="none" stroke="${m.color}" stroke-width="2"/>`;
+    });
+  }
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">${svg}</svg>`;
+}
+
+// ---------- Ist (Balken) vs. Soll (Linie); Legionellentage markiert, Abwesenheit schraffiert ----------
+function renderIstSoll(containerId, rows, opts={}){
+  const el = document.getElementById(containerId);
+  if (!rows.length){ el.innerHTML = empty(); return; }
+  const w = el.clientWidth > 0 ? el.clientWidth : 640;
+  const h = opts.height || 280;
+  const padL = 42, padR = 10, padT = 14, padB = 36;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const vals = [];
+  rows.forEach(r => [r.base, r.validation].forEach(v => { if (v!==null && v!==undefined && !isNaN(v)) vals.push(v); }));
+  const vMax = (vals.length ? Math.max(...vals) : 1) * 1.15;
+  const n = rows.length, slotW = plotW / n;
+  const y = v => padT + plotH - v / vMax * plotH;
+  const xc = i => padL + slotW*i + slotW/2;
+
+  let svg = yAxisGrid(w, padL, padR, padT, plotH, 0, vMax, 5);
+  const barW = Math.max(1.5, slotW * 0.7);
+  rows.forEach((r,i) => {
+    if ((r.atHome ?? 1) < 0.5){
+      svg += `<rect x="${(xc(i)-slotW/2).toFixed(1)}" y="${padT}" width="${slotW.toFixed(1)}" height="${plotH}" fill="var(--grey-100)"/>`;
+    }
+  });
+  rows.forEach((r,i) => {
+    if (r.base === null) return;
+    const yy = y(r.base);
+    const color = (r.legionella ?? 0) >= 0.5 ? 'var(--purple)' : 'var(--red)';
+    svg += `<rect x="${(xc(i)-barW/2).toFixed(1)}" y="${yy.toFixed(1)}" width="${barW.toFixed(1)}" height="${(padT+plotH-yy).toFixed(1)}" fill="${color}" fill-opacity="0.85"><title>${r.date}: Ist ${fmt(r.base,1)} · Soll ${fmt(r.validation,1)} · Varianz ${fmtSigned(r.variance,1)} kWh</title></rect>`;
+  });
+  const pts = rows.map((r,i) => ({x:xc(i), v:r.validation})).filter(p => p.v !== null && p.v !== undefined && !isNaN(p.v));
+  if (pts.length > 1){
+    svg += `<path d="${pts.map((p,i)=>`${i?'L':'M'} ${p.x.toFixed(1)} ${y(p.v).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-dasharray="5,3"/>`;
+  }
+  const every = Math.max(1, Math.ceil(n / 15));
+  rows.forEach((r,i) => {
+    if (i % every !== 0 && i !== n-1) return;
+    svg += `<text x="${xc(i).toFixed(1)}" y="${h-10}" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)" transform="rotate(-45 ${xc(i).toFixed(1)} ${h-10})">${dm(r.date)}</text>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">${svg}</svg>`;
+}
+
+// ---------- Jahresvergleich: gruppierte Balken ----------
+function renderYearCompare(containerId, rows){
+  const el = document.getElementById(containerId);
+  if (!rows.length){ el.innerHTML = empty(); return; }
+  const w = el.clientWidth > 0 ? el.clientWidth : 640;
+  const h = 280, padL = 42, padR = 10, padT = 14, padB = 36;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const vals = [];
+  rows.forEach(r => [r.base, r.baseY1, r.baseY2].forEach(v => { if (v!==null && v!==undefined && !isNaN(v)) vals.push(v); }));
+  const vMax = (vals.length ? Math.max(...vals) : 1) * 1.15;
+  const n = rows.length, slotW = plotW / n;
+  const y = v => padT + plotH - v / vMax * plotH;
+  const xc = i => padL + slotW*i + slotW/2;
+  let svg = yAxisGrid(w, padL, padR, padT, plotH, 0, vMax, 5);
+  const groupW = slotW * 0.75, barW = groupW / 3;
+  const colors = ['var(--accent)', '#f0a63f', '#f6cfa0'];
+  rows.forEach((r,i) => {
+    const gx0 = xc(i) - groupW/2;
+    [r.base, r.baseY1, r.baseY2].forEach((v,j) => {
+      if (v === null || v === undefined || isNaN(v)) return;
+      const yy = y(v);
+      svg += `<rect x="${(gx0+barW*j).toFixed(1)}" y="${yy.toFixed(1)}" width="${(barW-1).toFixed(1)}" height="${(padT+plotH-yy).toFixed(1)}" fill="${colors[j]}"/>`;
+    });
+  });
+  const every = Math.max(1, Math.ceil(n / 15));
+  rows.forEach((r,i) => {
+    if (i % every !== 0 && i !== n-1) return;
+    svg += `<text x="${xc(i).toFixed(1)}" y="${h-10}" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" fill="var(--text-dim)" transform="rotate(-45 ${xc(i).toFixed(1)} ${h-10})">${dm(r.date)}</text>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block; overflow:visible;">${svg}</svg>`;
+}
+
+// ---------- Validierungstabelle ----------
+// Mehrverbrauch (Ist > Soll) = rot, Minderverbrauch = gruen
+function varianceColor(v, scaleAbs){
+  if (v === null || v === undefined || isNaN(v)) return '';
+  const alpha = (Math.min(1, Math.abs(v) / scaleAbs) * 0.55).toFixed(2);
+  return v > 0 ? `background:rgba(227,6,19,${alpha});` : `background:rgba(31,157,85,${alpha});`;
+}
+let lastTableRows = [];
+let lastTableRange = {from:null, to:null};
+
+function renderDataTable(rows){
+  const tbody = document.getElementById('dataTableBody');
+  if (!rows.length){
+    tbody.innerHTML = `<tr><td colspan="12" style="padding:16px; text-align:center; color:var(--text-dim);">Keine Daten im gewählten Zeitraum.</td></tr>`;
+    return;
+  }
+  const pct = (arr) => arr.length ? arr[Math.floor(arr.length*0.95)] || arr[arr.length-1] : 1;
+  const abs = (f) => rows.map(r => r[f]).filter(v => v !== null && v !== undefined && !isNaN(v)).map(Math.abs).sort((a,b)=>a-b);
+  const sV = pct(abs('variance')) || 1, sV30 = pct(abs('variance30d')) || 1;
+  const cell = (v, d=1) => `<td style="text-align:right; padding:5px 8px;">${fmt(v,d)}</td>`;
+  tbody.innerHTML = rows.slice().reverse().map(r => {
+    const dLabel = new Date(r.date + 'T12:00:00').toLocaleDateString('de-CH', {day:'2-digit', month:'2-digit', year:'numeric'});
+    return `<tr style="border-bottom:1px solid var(--grey-100);">
+      <td style="text-align:left; padding:5px 8px;">${dLabel}</td>
+      ${cell(r.consumption)}${cell(r.charging)}${cell(r.base)}${cell(r.validation)}
+      ${cell(r.atHome, 2)}${cell(r.legionella, 0)}${cell(r.heizung, 2)}${cell(r.weekend, 0)}${cell(r.temp)}
+      <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance, sV)}">${fmtSigned(r.variance,1)}</td>
+      <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance30d, sV30)}">${fmtSigned(r.variance30d,1)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function formulaText(f){
+  if (!f) return 'Modell nicht verfügbar (zu wenige vollständige Tage).';
+  return `Soll = ${fmt(f.intercept,2)} + ${fmt(f.coef_at_home,2)}·AtHome + ${fmt(f.coef_legionella,2)}·Legio + ${fmt(f.coef_hdd,3)}·max(0; ${f.hdd_base} − T) + ${fmt(f.coef_heizung,2)}·Heizung + ${fmt(f.coef_weekend,2)}·Wochenende`;
+}
+function formulaStats(f){
+  if (!f) return '';
+  const src = f.source === 'table' ? `Fit ${f.trained_from} – ${f.trained_to}` : 'Live-Fit (Tabelle fehlt)';
+  return `R² ${fmt(f.r2,3)} · RMSE ${fmt(f.rmse,2)} kWh · n=${f.n_train} (${f.n_trimmed} Ausreisser) · ${src}`;
+}
+
+async function loadTable(fromStr, toStr){
+  const tableError = document.getElementById('tableError');
+  tableError.style.display = 'none';
+  document.getElementById('dataTableBody').innerHTML = `<tr><td colspan="12" style="padding:16px; text-align:center; color:var(--text-dim);">Lade...</td></tr>`;
+  try{
+    const data = await fetchJson('consumption-table', {from: fromStr, to: toStr});
+    lastTableRows = data.rows || [];
+    lastTableRange = {from: fromStr, to: toStr};
+    renderDataTable(lastTableRows);
+    document.getElementById('tableHint').textContent = `${fromStr} – ${toStr}`;
+    document.getElementById('formulaInfo').textContent = formulaStats(data.formula);
+  } catch(e){
+    document.getElementById('dataTableBody').innerHTML = '';
+    tableError.style.display = 'block';
+    tableError.textContent = `Fehler beim Laden der Tabelle: ${e.message}`;
+  }
+}
+
+function exportTableCsv(){
+  if (!lastTableRows.length) return;
+  const header = ['Datum','Gesamt_kWh','Auto_kWh','Grundverbrauch_kWh','Validation_kWh','AtHome','Legionellenschutz','Heizung','Wochenende','Temp_C','Heizgradtage','Varianz_kWh','Varianz30d_kWh'];
+  const v = (x) => (x === null || x === undefined) ? '' : String(x).replace('.', ',');
+  const lines = [header.join(';')].concat(lastTableRows.map(r =>
+    [r.date, v(r.consumption), v(r.charging), v(r.base), v(r.validation), v(r.atHome), v(r.legionella), v(r.heizung), v(r.weekend), v(r.temp), v(r.hdd), v(r.variance), v(r.variance30d)].join(';')));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `verbrauch_validierung_${lastTableRange.from}_${lastTableRange.to}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---------- Laden ----------
+let selectedDate = zurichYesterdayStr();
+let yearData = null; // letzte 365 Tage bis gestern
+
+async function loadYear(){
+  const to = zurichYesterdayStr();
+  yearData = await fetchJson('consumption-table', {from: addDays(to, -364), to});
+  return yearData;
+}
+
+function renderIstSollRange(days){
+  if (!yearData) return;
+  const rows = yearData.rows.slice(-days);
+  renderLegend('legendIstSoll', [
+    {label:'Ist (Grundverbrauch)', color:'var(--red)'},
+    {label:'Ist an Legionellentagen', color:'var(--purple)'},
+    {label:'Soll (Modell)', color:'var(--blue)', style:'dashed'},
+    {label:'Abwesend (at home < 0.5)', color:'var(--grey-100)'},
+  ]);
+  renderIstSoll('chartIstSoll', rows, {height:280});
+}
+
+async function load(){
+  document.getElementById('status').style.display = 'block';
+  document.getElementById('status').textContent = 'Lade Daten...';
+  document.getElementById('content').style.display = 'none';
+  try{
+    if (!yearData) await loadYear();
+    let row = yearData.rows.find(r => r.date === selectedDate);
+    let formula = yearData.formula;
+    if (!row){
+      const one = await fetchJson('consumption-table', {from: selectedDate, to: selectedDate});
+      row = one.rows[0]; formula = one.formula;
+    }
+    const stats = await fetchJson('consumption-day-stats', {date: selectedDate}).catch(() => ({}));
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    document.getElementById('subline').textContent =
+      new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-CH', {weekday:'short', day:'2-digit', month:'2-digit', year:'numeric'});
+
+    document.getElementById('kpiBase').innerHTML = `${fmt(row?.base)} <small>kWh</small>`;
+    document.getElementById('kpiModel').innerHTML = `${fmt(row?.validation)} <small>kWh</small>`;
+    document.getElementById('kpiVar').innerHTML = `${fmtSigned(row?.variance)} <small>kWh</small>`;
+    document.getElementById('kpiCharge').innerHTML = `${fmt(row?.charging)} <small>kWh</small>`;
+    document.getElementById('kpiTotal').innerHTML = `${fmt(row?.consumption)} <small>kWh</small>`;
+    document.getElementById('driverChips').innerHTML = row ? [
+      `<span class="chip ${(row.atHome ?? 0) >= 0.5 ? 'on' : ''}">At home ${fmt(row.atHome,2)}</span>`,
+      `<span class="chip ${(row.legionella ?? 0) >= 0.5 ? 'on' : ''}">Legionellenschutz ${(row.legionella ?? 0) >= 0.5 ? 'ja' : 'nein'}</span>`,
+      `<span class="chip ${(row.heizung ?? 0) > 0 ? 'on' : ''}">Heizung ${fmt(row.heizung,2)}</span>`,
+      `<span class="chip ${row.weekend ? 'on' : ''}">${row.weekend ? 'Wochenende' : 'Werktag'}</span>`,
+      `<span class="chip">Ø Temp ${fmt(row.temp)} °C</span>`,
+      `<span class="chip">Heizgradtage ${fmt(row.hdd)}</span>`,
+    ].join('') : '';
+
+    renderLegend('legendBar', [
+      {label:'0–Ist', color:'var(--red)'}, {label:'Ist–Max', color:'var(--grey-300)'}, {label:'Ist', color:'var(--ink)', style:'line'},
+      {label:'Soll (Modell)', color:'var(--blue)', style:'line'}, {label:'Min/Max (Datum)', color:'var(--ink)'},
+      {label:'Median', color:'var(--blue)', style:'dashed'}, {label:'Mean', color:'var(--purple)', style:'dashed'},
+      {label:`Schnitt 30 Tage (±15d, n=${stats.avg30_count||0})`, color:'var(--teal)', style:'dashed'},
+    ]);
+    renderRangeBar('chartBar', {
+      min: stats.min, minDate: stats.minDate, max: stats.max, maxDate: stats.maxDate,
+      actual: row?.base ?? null, model: row?.validation ?? null,
+      median: stats.median, mean: stats.mean, avg30: stats.avg30,
+    }, {height: 300});
+    renderWindowTable(yearData.rows, yearData.formula);
+
+    renderLegend('legendBreakdown', [
+      {label:'Grundlast', color:'#9aa0a6'}, {label:'At home', color:'var(--red)'},
+      {label:'Legionellenschutz', color:'var(--purple)'}, {label:'Heizgradtage', color:'var(--blue)'},
+      {label:'Heizung', color:'var(--teal)'}, {label:'Wochenende', color:'var(--amber)'},
+      {label:'Soll', color:'var(--blue)', style:'line'}, {label:'Ist', color:'var(--ink)', style:'line'},
+    ]);
+    renderBreakdown('chartBreakdown', row, formula);
+    document.getElementById('formulaBox').innerHTML =
+      `<div class="k">Modell (OLS über gesamte Historie, gespeichert in consumption_formula)</div><div>${formulaText(formula)}</div><div class="k" style="margin-top:4px;">${formulaStats(formula)}</div>`;
+
+    renderLegend('legendScatter', [
+      {label:'At home', color:'var(--red)'}, {label:'Abwesend', color:'var(--grey-600)'},
+      {label:'Legionellentag', color:'var(--purple)'},
+      {label:'Modell Werktag (ø Heizung)', color:'var(--ink)', style:'line'},
+    ]);
+    renderScatter('chartScatter', yearData.rows, yearData.formula);
+
+    const activeBtn = document.querySelector('.range-toggle-btn.active');
+    renderIstSollRange(parseInt(activeBtn?.dataset.days || '30', 10));
+
+    renderLegend('legendYearCompare', [
+      {label:'Aktuelles Jahr', color:'var(--accent)'}, {label:'Vorjahr', color:'#f0a63f'}, {label:'Vor 2 Jahren', color:'#f6cfa0'},
+    ]);
+    renderYearCompare('chartYearCompare', yearData.rows.slice(-30));
+  } catch(e){
+    console.warn('API-Zugriff fehlgeschlagen:', e);
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('status').textContent = `Fehler beim Laden: ${e.message}`;
+  }
+}
+
+document.querySelectorAll('.range-toggle-btn').forEach(b => b.addEventListener('click', (ev) => {
+  document.querySelectorAll('.range-toggle-btn').forEach(x => x.classList.remove('active'));
+  ev.currentTarget.classList.add('active');
+  renderIstSollRange(parseInt(ev.currentTarget.dataset.days, 10));
+}));
+
+const dayInput = document.getElementById('dayInput');
+dayInput.max = zurichTodayStr();
+dayInput.value = selectedDate;
+dayInput.addEventListener('change', () => { if (dayInput.value){ selectedDate = dayInput.value; load(); } });
+document.getElementById('yesterdayBtn').addEventListener('click', () => {
+  selectedDate = zurichYesterdayStr(); dayInput.value = selectedDate; load();
+});
+
+const rangeFromInput = document.getElementById('rangeFrom');
+const rangeToInput = document.getElementById('rangeTo');
+const defaultTo = zurichYesterdayStr();
+const defaultFrom = addDays(defaultTo, -59);
+rangeFromInput.max = rangeToInput.max = zurichTodayStr();
+rangeFromInput.value = defaultFrom; rangeToInput.value = defaultTo;
+document.getElementById('rangeApplyBtn').addEventListener('click', () => {
+  if (rangeFromInput.value && rangeToInput.value) loadTable(rangeFromInput.value, rangeToInput.value);
+});
+document.getElementById('rangeDefaultBtn').addEventListener('click', () => {
+  rangeFromInput.value = defaultFrom; rangeToInput.value = defaultTo; loadTable(defaultFrom, defaultTo);
+});
+document.getElementById('csvExportBtn').addEventListener('click', exportTableCsv);
+
+window.addEventListener('resize', () => { if (yearData && document.getElementById('content').style.display !== 'none') load(); });
+load();
+loadTable(defaultFrom, defaultTo);
+</script>
+  <script src="https://munotstadt.github.io/db_admin/assets/improvements-button.js" data-app="energymanager" data-position="left"></script>
+</body>
+</html>
