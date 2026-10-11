@@ -254,8 +254,8 @@
         <table style="width:100%; border-collapse:collapse; font-family:'IBM Plex Mono',monospace; font-size:0.78rem;" id="windowTable"></table>
       </div>
       <div class="formula-box" style="margin-top:12px; font-family:'Inter',sans-serif; font-size:0.8rem; line-height:1.55;">
-        <b>Treiber im Modell:</b> At home (Anwesenheit), Legionellenschutz (Boiler), Heizgradtage (max(0; 15 °C − Tagesmittel)),
-        Heizung (Betriebsgrad 0–1), Wochenende (Sa/So).<br>
+        <b>Treiber im Modell:</b> At home (Anwesenheit), Legionellenschutz (Boiler), Heizgradtage (max(0; 15 °C − Tagesmittel), nur bei eingeschalteter Heizung, d.h. Heizung &gt; 0),
+        Heizung (Betriebsgrad 0–1), Wochenende (Sa/So, Zuschlag nur bei Anwesenheit, d.h. At home &gt; 0).<br>
         <b>Schätzung:</b> OLS über die gesamte Historie (ca. 3 Jahre), einmalige 3σ-Ausreisserbereinigung. Die Fenster 6/12 Monate dienen nur der Bewertung, nicht der Schätzung.
         Koeffizienten stehen in <code>energy/consumption_formula</code> (Neuberechnung: <code>analysis/fit_consumption_model.py</code>).<br>
         <b>Bewusst nicht enthalten:</b> Auto-Laden (aus der Zielgrösse entfernt), Quooker (zeitgleich mit Anwesenheit, kein eigener Erklärungsbeitrag),
@@ -451,9 +451,9 @@ function renderBreakdown(containerId, row, formula){
     {label:'Grundlast', v: formula.intercept, color:'#9aa0a6'},
     {label:'At home', v: formula.coef_at_home * (row.atHome ?? 0), color:'var(--red)'},
     {label:'Legionellenschutz', v: formula.coef_legionella * (row.legionella ?? 0), color:'var(--purple)'},
-    {label:'Heizgradtage', v: formula.coef_hdd * (row.hdd ?? 0), color:'var(--blue)'},
+    {label:'Heizgradtage', v: formula.coef_hdd * ((row.heizung ?? 0) > 0 ? (row.hdd ?? 0) : 0), color:'var(--blue)'},
     {label:'Heizung', v: formula.coef_heizung * (row.heizung ?? 0), color:'var(--teal)'},
-    {label:'Wochenende', v: formula.coef_weekend * (row.weekend ?? 0), color:'var(--amber)'},
+    {label:'Wochenende', v: formula.coef_weekend * ((row.atHome ?? 0) > 0 ? (row.weekend ?? 0) : 0), color:'var(--amber)'},
   ];
   const w = el.clientWidth > 0 ? el.clientWidth : 320;
   const h = 300, padL = 44, padR = 120, padT = 18, padB = 26;
@@ -521,8 +521,9 @@ function renderScatter(containerId, rows, formula){
   // Modelllinien (at home = 1 / 0, ohne Legionellenschutz)
   if (formula){
     const heizAvg = pts.reduce((a,p)=>a+(p.heizung ?? 0),0) / pts.length;
+    const heizShare = pts.reduce((a,p)=>a+((p.heizung ?? 0) > 0 ? 1 : 0),0) / pts.length; // Anteil Tage mit Heizung
     [{home:1, color:'var(--red)'}, {home:0, color:'var(--grey-600)'}].forEach(m => {
-      const f = t => formula.intercept + formula.coef_at_home*m.home + formula.coef_hdd*Math.max(0, formula.hdd_base - t) + formula.coef_heizung*heizAvg;
+      const f = t => formula.intercept + formula.coef_at_home*m.home + formula.coef_hdd*Math.max(0, formula.hdd_base - t)*heizShare + formula.coef_heizung*heizAvg;
       const d = [];
       for (let t = tMin; t <= tMax; t += 0.5) d.push(`${d.length?'L':'M'} ${x(t).toFixed(1)} ${y(Math.max(0,f(t))).toFixed(1)}`);
       svg += `<path d="${d.join(' ')}" fill="none" stroke="${m.color}" stroke-width="2"/>`;
@@ -628,7 +629,7 @@ function renderDataTable(rows){
     return `<tr style="border-bottom:1px solid var(--grey-100);">
       <td style="text-align:left; padding:5px 8px;">${dLabel}</td>
       ${cell(r.consumption)}${cell(r.charging)}${cell(r.base)}${cell(r.validation)}
-      ${cell(r.atHome, 2)}${cell(r.legionella, 0)}${cell(r.heizung, 2)}${cell(r.weekend, 0)}${cell(r.temp)}
+      ${cell(r.atHome, 1)}${cell(r.legionella, 0)}${cell(r.heizung, 1)}${cell(r.weekend, 0)}${cell(r.temp)}
       <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance, sV)}">${fmtSigned(r.variance,1)}</td>
       <td style="text-align:right; padding:5px 8px; ${varianceColor(r.variance30d, sV30)}">${fmtSigned(r.variance30d,1)}</td>
     </tr>`;
@@ -637,7 +638,7 @@ function renderDataTable(rows){
 
 function formulaText(f){
   if (!f) return 'Modell nicht verfügbar (zu wenige vollständige Tage).';
-  return `Soll = ${fmt(f.intercept,2)} + ${fmt(f.coef_at_home,2)}·AtHome + ${fmt(f.coef_legionella,2)}·Legio + ${fmt(f.coef_hdd,3)}·max(0; ${f.hdd_base} − T) + ${fmt(f.coef_heizung,2)}·Heizung + ${fmt(f.coef_weekend,2)}·Wochenende`;
+  return `Soll = ${fmt(f.intercept,2)} + ${fmt(f.coef_at_home,2)}·AtHome + ${fmt(f.coef_legionella,2)}·Legio + ${fmt(f.coef_hdd,3)}·max(0; ${f.hdd_base} − T)·[Heizung>0] + ${fmt(f.coef_heizung,2)}·Heizung + ${fmt(f.coef_weekend,2)}·Wochenende·[AtHome>0]`;
 }
 function formulaStats(f){
   if (!f) return '';
@@ -699,10 +700,13 @@ function renderIstSollRange(days){
   renderIstSoll('chartIstSoll', rows, {height:280});
 }
 
-async function load(){
-  document.getElementById('status').style.display = 'block';
-  document.getElementById('status').textContent = 'Lade Daten...';
-  document.getElementById('content').style.display = 'none';
+async function load(silent = false){
+  // silent: Neuzeichnen ohne Inhalt auszublenden (sonst springt die Seite nach oben)
+  if (!silent){
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('status').textContent = 'Lade Daten...';
+    document.getElementById('content').style.display = 'none';
+  }
   try{
     if (!yearData) await loadYear();
     let row = yearData.rows.find(r => r.date === selectedDate);
@@ -805,7 +809,20 @@ document.getElementById('rangeDefaultBtn').addEventListener('click', () => {
 });
 document.getElementById('csvExportBtn').addEventListener('click', exportTableCsv);
 
-window.addEventListener('resize', () => { if (yearData && document.getElementById('content').style.display !== 'none') load(); });
+// iPad/iOS Safari feuert beim Scrollen 'resize' (Toolbar ein-/ausblenden). Nur bei Breitenänderung,
+// entprellt und ohne den Inhalt auszublenden neu zeichnen, damit die Scrollposition erhalten bleibt.
+let lastWidth = window.innerWidth, resizeTimer = null;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === lastWidth) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    lastWidth = window.innerWidth;
+    if (yearData && document.getElementById('content').style.display !== 'none'){
+      const y = window.scrollY;
+      load(true).then(() => window.scrollTo(0, y));
+    }
+  }, 250);
+});
 load();
 loadTable(defaultFrom, defaultTo);
 </script>
