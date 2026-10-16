@@ -11,6 +11,7 @@
   // Custom Route statt workers.dev-Default-URL. Setzt voraus, dass munot.app
   // als Zone im selben Cloudflare-Account liegt (wie bei energy.munot.app).
   "routes": [
+    { "pattern": "energy.munot.app", "custom_domain": true },
     { "pattern": "api.energy.munot.app", "custom_domain": true }
   ],
 
