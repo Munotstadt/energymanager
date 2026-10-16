@@ -8,6 +8,10 @@ routes = [
   { pattern = "api.energy.munot.app", custom_domain = true }
 ]
 
+[assets]
+directory = "../public"
+run_worker_first = ["/api/*"]
+
 # 15-Minuten-Takt, identisch zur bisherigen car-charging-automation.yml
 [triggers]
 crons = ["*/15 * * * *"]

@@ -196,12 +196,12 @@
 
 <script>
 // ---------- Cloudflare Worker API (D1) ----------
-const DATA_API_URL = "https://api.energy.munot.app/api/data/solarmanager_data";
+const DATA_API_URL = "/api/data/solarmanager_data";
 // Hinweis: /api/data/ekz_energy_prices ist (noch) nicht in der dokumentierten
 // Worker-Route-Liste (CLOUDFLARE_SETUP.md) enthalten. Angenommen nach dem
 // Muster der übrigen /api/data/<table>-Endpunkte — bitte im Worker
 // verifizieren/ergänzen, falls die Route noch fehlt.
-const PRICES_API_URL = "https://api.energy.munot.app/api/data/ekz_energy_prices";
+const PRICES_API_URL = "/api/data/ekz_energy_prices";
 const NUMERIC_COLS = ["Consumption_kWh","Production_kWh","GridFrom_kWh","GridTo_kWh","Entfeuchter_Waschen_kWh","Wasserpumpe_kWh","Ladestation_kWh"];
 
 const CACHE_KEY = "munotstadt_costs_cache_v1";

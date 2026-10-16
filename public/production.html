@@ -259,7 +259,7 @@
 
 <script>
 // ---------- Cloudflare Worker API (energy_production) ----------
-const API_BASE = "https://api.energy.munot.app/api";
+const API_BASE = location.origin + "/api";
 
 function fmt(n, digits=1){
   if (n === null || n === undefined || isNaN(n)) return "–";
