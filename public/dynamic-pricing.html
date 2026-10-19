@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Munotstadt Energy · Dynamic Pricing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E30613;
+    --ink:#1a1a1a;
+    --grey-900:#2b2b2b;
+    --grey-600:#666;
+    --grey-300:#d8d8d8;
+    --grey-100:#f4f4f4;
+    --bg:#ffffff;
+    --radius:6px;
+    --panel:#ffffff; --panel-2:#f4f4f4; --border:#d8d8d8;
+    --text:#1a1a1a; --text-dim:#666; --text-dim2:#8a8a8a;
+    --accent:#E30613; --accent-dim:#fdeceb;
+    --green:#1f9d55; --blue:#1f6feb; --amber:#b9770e; --purple:#7c3aed; --yellow:#d4a900;
+    --grid:#e8e8e8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:15px; line-height:1.45;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:24px 20px 60px;}
+  .wrap.wide{max-width:1500px;}
+  @media(max-width:1540px){
+    .wrap.wide{max-width:none; padding-left:16px; padding-right:16px;}
+  }
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:2px solid var(--ink);
+  }
+  header.topbar .brand{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px;}
+  header.topbar .brand span{color:var(--red);}
+  header.topbar .nav-links{display:flex; gap:2px; margin-right:6px;}
+  header.topbar .nav-right{display:flex; align-items:center; gap:6px;}
+  header.topbar .settings-link, header.topbar .logout-link, header.topbar .nav-link{
+    text-decoration:none; color:var(--ink); font-size:13px; font-weight:500;
+    padding:7px 12px; border-radius:var(--radius); white-space:nowrap;
+  }
+  header.topbar .logout-link{color:var(--grey-600);}
+  header.topbar .settings-link:hover, header.topbar .logout-link:hover, header.topbar .nav-link:hover{background:var(--grey-100);}
+  header.topbar .nav-link.active{background:var(--ink); color:#fff;}
+
+  h1{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 2px;}
+  .sub{color:var(--text-dim); font-size:0.85rem; margin-bottom:18px;}
+  h2{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1rem; margin:30px 0 10px;}
+  h2 .hint{color:var(--text-dim); font-weight:400; font-size:0.78rem; margin-left:6px;}
+  .card{background:var(--bg); border:1px solid var(--grey-300); border-radius:var(--radius); padding:14px 16px;}
+  .toolbar{display:flex; flex-wrap:wrap; gap:14px 22px; align-items:flex-end; margin-bottom:16px;}
+  .ctl{display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-dim);}
+  .ctl input,.ctl select{font-family:'IBM Plex Mono',monospace; font-size:13px; padding:6px 8px; border:1px solid var(--grey-300); border-radius:var(--radius); background:#fff; color:var(--ink);}
+  .btn{font-family:'Inter',sans-serif; font-weight:500; font-size:13px; padding:7px 12px; background:#fff; border:1px solid var(--grey-300); border-radius:var(--radius); cursor:pointer; color:var(--ink);}
+  .btn:hover{background:var(--grey-100);}
+  .btn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .btn-row{display:flex; gap:6px; flex-wrap:wrap;}
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-bottom:6px;}
+  .kpi{border:1px solid var(--grey-300); border-radius:var(--radius); padding:10px 14px;}
+  .kpi .l{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim);}
+  .kpi .v{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.45rem; margin-top:2px;}
+  .kpi .v small{font-size:.75rem; font-weight:500; color:var(--text-dim);}
+  .kpi .s{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-dim); margin-top:2px;}
+  .chart-wrap{position:relative;}
+  svg.chart{width:100%; height:auto; display:block; touch-action:none;}
+  svg.chart text{font-family:'IBM Plex Mono',monospace; font-size:11px; fill:#666;}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-dim); margin:0 0 6px;}
+  .legend i{display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; border-radius:2px;}
+  .legend label{cursor:pointer; user-select:none;}
+  .tip{position:absolute; pointer-events:none; background:#1a1a1a; color:#fff; padding:7px 10px; border-radius:var(--radius); font-family:'IBM Plex Mono',monospace; font-size:11.5px; line-height:1.5; white-space:nowrap; display:none; z-index:5;}
+  .daynav{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;}
+  .daynav .day-title{font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:1.05rem; min-width:210px;}
+  table{width:100%; border-collapse:collapse; font-family:'IBM Plex Mono',monospace; font-size:0.8rem;}
+  th{text-align:right; color:var(--grey-600); font-weight:600; padding:8px 12px; border-bottom:1px solid var(--grey-300); font-size:0.68rem; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap;}
+  td{text-align:right; padding:7px 12px; border-bottom:1px solid var(--grid); white-space:nowrap;}
+  th:first-child,td:first-child{text-align:left;}
+  tbody tr:hover td{background:var(--grey-100);}
+  tr:last-child td{border-bottom:none;}
+  tr.sum td{border-top:2px solid var(--ink); font-weight:600; background:var(--grey-100);}
+  td.cheap{color:var(--green); font-weight:600;} td.dear{color:var(--accent); font-weight:600;}
+  .table-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .matrix td{padding:6px 8px; text-align:center;} .matrix th{text-align:center; padding:6px 8px;}
+  .matrix td:first-child,.matrix th:first-child{text-align:left; position:sticky; left:0; background:#fff;}
+  #status{color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.82rem; padding:40px 0; text-align:center;}
+  .footnotes{color:var(--text-dim); font-size:0.72rem; line-height:1.6; margin-top:10px;}
+  .footer{color:var(--text-dim2); font-size:0.72rem; text-align:center; margin-top:30px;}
+  .err{color:var(--accent);}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Munotstadt <span>Energy</span></div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Dashboard</a>
+      <a href="live.html" class="nav-link">Live</a>
+      <a href="production.html" class="nav-link">Produktion</a>
+      <a href="consumption.html" class="nav-link">Verbrauch</a>
+      <a href="geraete.html" class="nav-link">Geräte</a>
+      <a href="car.html" class="nav-link">Auto</a>
+      <a href="costs.html" class="nav-link">Kosten</a>
+      <a href="dynamic-pricing.html" class="nav-link active">Dynamic Pricing</a>
+    </div>
+    <a href="settings.html" class="settings-link">&#9881; Settings</a>
+    <a href="/cdn-cgi/access/logout" class="logout-link">Logout</a>
+  </div>
+</header>
+<div class="wrap wide">
+  <h1>Dynamic Pricing</h1>
+  <div class="sub">EKZ dynamischer Stromtarif · 15-Minuten-Intervalle · Preise in Rp./kWh (inkl. Netz) · Zeiten in Schweizer Zeit</div>
+
+  <div class="toolbar">
+    <div class="ctl"><span>Von</span><input type="date" id="from"></div>
+    <div class="ctl"><span>Bis</span><input type="date" id="to"></div>
+    <div class="ctl"><span>Schnellwahl</span>
+      <div class="btn-row" id="quick">
+        <button class="btn" data-days="7">7 Tage</button>
+        <button class="btn" data-days="14">14 Tage</button>
+        <button class="btn" data-days="30">30 Tage</button>
+        <button class="btn" data-days="0">Alle</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Preisart (Analyse)</span>
+      <select id="metric">
+        <option value="tot">Total (Energie + Netz)</option>
+        <option value="e">Energie</option>
+        <option value="g">Netz</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="status">Lade Daten …</div>
+  <div id="content" style="display:none">
+
+    <div class="kpis" id="kpis"></div>
+
+    <h2>Tagesverlauf <span class="hint">15-Minuten-Intervalle</span></h2>
+    <div class="card">
+      <div class="daynav">
+        <button class="btn" id="prev">&#8592;</button>
+        <input type="date" id="day" style="font-family:'IBM Plex Mono',monospace;font-size:13px;padding:6px 8px;border:1px solid var(--grey-300);border-radius:6px;">
+        <button class="btn" id="next">&#8594;</button>
+        <button class="btn" id="today">Heute</button>
+        <span class="day-title" id="dayTitle"></span>
+      </div>
+      <div class="legend" id="dayLegend"></div>
+      <div class="chart-wrap" id="dayChart"></div>
+      <div class="footnotes" id="dayInfo"></div>
+    </div>
+
+    <h2>Perioden-Profil <span class="hint" id="profHint"></span></h2>
+    <div class="card">
+      <div class="legend">
+        <span><i style="background:#E30613"></i>Ø über Periode</span>
+        <span><i style="background:rgba(227,6,19,.22);height:10px"></i>Min–Max Band</span>
+        <span><i style="background:#1a1a1a"></i>gewählter Tag</span>
+      </div>
+      <div class="chart-wrap" id="profChart"></div>
+    </div>
+
+    <h2>Mittelwerte nach 2-Stunden-Block <span class="hint" id="blockHint"></span></h2>
+    <div class="card">
+      <div class="table-scroll"><table id="blockTable"></table></div>
+    </div>
+
+    <h2>Tag × Zeitblock <span class="hint">Ø je Tag und 2-Stunden-Block · grün = günstig, rot = teuer</span></h2>
+    <div class="card">
+      <div class="table-scroll"><table class="matrix" id="matrix"></table></div>
+    </div>
+
+    <div class="footnotes">Quelle: EKZ Tariffs API, täglich um 22:00 UTC für den Folgetag in D1 gespeichert (Tabelle <code>ekz_energy_prices_dynamic</code>). Mittelwerte sind einfache Durchschnitte der 15-Minuten-Preise (nicht verbrauchsgewichtet). Tage mit Zeitumstellung haben 92 bzw. 100 Intervalle.</div>
+  </div>
+  <div class="footer" id="footer"></div>
+</div>
+
+<script>
+const TZ = "Europe/Zurich";
+const API = "/api/data/dynamic-prices";
+const CACHE_PREFIX = "munotstadt_dynprice_v1_";
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const COLORS = { tot: "#E30613", e: "#1f6feb", g: "#8a8a8a" };
+const NAMES = { tot: "Total", e: "Energie", g: "Netz" };
+const $ = (id) => document.getElementById(id);
+
+const partsFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+function localParts(ms) {
+  const o = {};
+  for (const p of partsFmt.formatToParts(new Date(ms))) o[p.type] = p.value;
+  return { ymd: `${o.year}-${o.month}-${o.day}`, h: +o.hour, m: +o.minute };
+}
+const pad = (n) => String(n).padStart(2, "0");
+const hhmm = (ms) => { const p = localParts(ms); return `${pad(p.h)}:${pad(p.m)}`; };
+const todayYmd = () => localParts(Date.now()).ymd;
+function addDays(ymd, n) { const d = new Date(ymd + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+const fmtDay = (ymd) => { const [y, m, d] = ymd.split("-"); return `${d}.${m}.${y}`; };
+const wd = (ymd) => ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][new Date(ymd + "T12:00:00Z").getUTCDay()];
+const rp = (v) => (v == null || isNaN(v) ? "–" : v.toFixed(2));
+
+// ---------- State ----------
+let rows = [];            // {t, day, h, m, slot, e, g, tot} (Rp./kWh)
+let loaded = { from: null, to: null };
+let meta = { first: null, last: null };
+let state = { from: null, to: null, day: null, metric: "tot" };
+
+// ---------- Data ----------
+function normalize(data) {
+  return data.filter((r) => r.total_CHFkWh != null).map((r) => {
+    const t = Date.parse(r.valid_from);
+    const p = localParts(t);
+    return { t, day: p.ymd, h: p.h, m: p.m, slot: p.h * 4 + Math.floor(p.m / 15),
+      e: (r.electricity_CHFkWh ?? 0) * 100, g: (r.grid_CHFkWh ?? 0) * 100, tot: r.total_CHFkWh * 100 };
+  });
+}
+async function fetchRange(from, to) {
+  const key = CACHE_PREFIX + from + "_" + to;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+  const fresh = cached && Date.now() - cached.ts < CACHE_TTL_MS;
+  const doFetch = async () => {
+    const res = await fetch(`${API}?from=${from}&to=${to}`, { cache: "no-store", credentials: "include" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), payload: j })); } catch (e) {}
+    return j;
+  };
+  if (fresh) return cached.payload;
+  try { return await doFetch(); } catch (err) { if (cached) return cached.payload; throw err; }
+}
+async function ensureLoaded(from, to) {
+  if (loaded.from && from >= loaded.from && to <= loaded.to) return;
+  const f = loaded.from ? (from < loaded.from ? from : loaded.from) : from;
+  const t = loaded.to ? (to > loaded.to ? to : loaded.to) : to;
+  const j = await fetchRange(f, t);
+  rows = normalize(j.data);
+  loaded = { from: f, to: t };
+  meta = { first: j.first_from ? localParts(Date.parse(j.first_from)).ymd : null, last: j.last_from ? localParts(Date.parse(j.last_from)).ymd : null };
+  $("footer").textContent = "Daten geladen: " + (j.generated_at || "");
+}
+
+// ---------- Helpers ----------
+const mean = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+function inPeriod() { return rows.filter((r) => r.day >= state.from && r.day <= state.to); }
+function byDay(rs) { const m = new Map(); for (const r of rs) { if (!m.has(r.day)) m.set(r.day, []); m.get(r.day).push(r); } return m; }
+
+// ---------- Generic SVG line chart ----------
+// cfg: {W,H,xmin,xmax,ticks:[{x,label}],series:[{pts:[[x,y]],color,step,width,dash}],band:{pts:[[x,lo,hi]],color},ymin?,ymax?,tipFn(x)->html,marks:[{x,y,color,label}]}
+function drawChart(host, cfg) {
+  const W = cfg.W || 1100, H = cfg.H || 340, m = { l: 48, r: 26, t: 14, b: 28 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  let ys = [];
+  cfg.series.forEach((s) => s.pts.forEach((p) => ys.push(p[1])));
+  if (cfg.band) cfg.band.pts.forEach((p) => ys.push(p[1], p[2]));
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  const step = niceStep((hi - lo) || 1);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  if (hi === lo) hi = lo + step;
+  const X = (x) => m.l + (x - cfg.xmin) / (cfg.xmax - cfg.xmin) * iw;
+  const Y = (y) => m.t + ih - (y - lo) / (hi - lo) * ih;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e8e8e8"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(step < 1 ? 1 : 0)}</text>`;
+  }
+  cfg.ticks.forEach((t) => { s += `<line x1="${X(t.x)}" x2="${X(t.x)}" y1="${m.t}" y2="${m.t + ih}" stroke="#f0f0f0"/><text x="${X(t.x)}" y="${H - 8}" text-anchor="middle">${t.label}</text>`; });
+  if (cfg.band) {
+    const b = cfg.band.pts;
+    const up = b.map((p) => `${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`);
+    const dn = b.slice().reverse().map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`);
+    s += `<polygon points="${up.concat(dn).join(" ")}" fill="${cfg.band.color}"/>`;
+  }
+  cfg.series.forEach((se) => {
+    if (!se.pts.length) return;
+    let d = "";
+    se.pts.forEach((p, i) => {
+      if (se.step) {
+        const x1 = X(p[0]), x2 = X(i + 1 < se.pts.length ? se.pts[i + 1][0] : p[0] + (cfg.stepW || 0.25));
+        d += `${i ? "L" : "M"}${x1.toFixed(1)},${Y(p[1]).toFixed(1)}L${x2.toFixed(1)},${Y(p[1]).toFixed(1)}`;
+      } else d += `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`;
+    });
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="${se.width || 2}" ${se.dash ? `stroke-dasharray="${se.dash}"` : ""} stroke-linejoin="round"/>`;
+  });
+  (cfg.marks || []).forEach((k) => { s += `<circle cx="${X(k.x)}" cy="${Y(k.y)}" r="4" fill="${k.color}" stroke="#fff" stroke-width="1.5"/><text x="${X(k.x)}" y="${Y(k.y) + (k.below ? 16 : -8)}" text-anchor="middle" style="fill:${k.color};font-weight:600">${k.label}</text>`; });
+  s += `<line id="cur" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="#1a1a1a" stroke-opacity=".35" style="display:none"/>`;
+  s += `<rect class="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
+  host.innerHTML = s + `<div class="tip"></div>`;
+  const svg = host.querySelector("svg"), tip = host.querySelector(".tip"), cur = host.querySelector("#cur");
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect();
+    const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX);
+    const vx = (cx - r.left) / r.width * W;
+    const x = cfg.xmin + (vx - m.l) / iw * (cfg.xmax - cfg.xmin);
+    const html = cfg.tipFn(Math.max(cfg.xmin, Math.min(cfg.xmax, x)));
+    if (!html) return;
+    cur.setAttribute("x1", vx); cur.setAttribute("x2", vx); cur.style.display = "";
+    tip.innerHTML = html; tip.style.display = "block";
+    const px = (cx - r.left);
+    tip.style.left = Math.min(px + 14, r.width - tip.offsetWidth - 4) + "px";
+    tip.style.top = "10px";
+  };
+  const hide = () => { tip.style.display = "none"; cur.style.display = "none"; };
+  const hit = host.querySelector(".hit");
+  hit.addEventListener("mousemove", move); hit.addEventListener("touchmove", move, { passive: true });
+  hit.addEventListener("mouseleave", hide); hit.addEventListener("touchend", hide);
+}
+function niceStep(range) {
+  const raw = range / 6, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+
+// ---------- Renderers ----------
+function renderKpis() {
+  const rs = inPeriod(), k = state.metric;
+  if (!rs.length) { $("kpis").innerHTML = `<div class="kpi"><div class="l">Keine Daten</div><div class="s">im gewählten Zeitraum</div></div>`; return; }
+  let mn = rs[0], mx = rs[0];
+  rs.forEach((r) => { if (r[k] < mn[k]) mn = r; if (r[k] > mx[k]) mx = r; });
+  const avg = mean(rs.map((r) => r[k]));
+  const days = byDay(rs).size;
+  const when = (r) => `${wd(r.day)} ${fmtDay(r.day).slice(0, 5)} ${pad(r.h)}:${pad(r.m)}`;
+  const kpi = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}<small> Rp./kWh</small></div><div class="s">${s}</div></div>`;
+  $("kpis").innerHTML =
+    kpi(`Ø ${NAMES[k]}`, rp(avg), `${days} Tage · ${rs.length} Intervalle`) +
+    kpi("Minimum", rp(mn[k]), when(mn)) +
+    kpi("Maximum", rp(mx[k]), when(mx)) +
+    kpi("Spanne", rp(mx[k] - mn[k]), `Max − Min`);
+}
+
+function renderDay() {
+  const rs = rows.filter((r) => r.day === state.day).sort((a, b) => a.t - b.t);
+  $("day").value = state.day;
+  $("dayTitle").textContent = `${wd(state.day)}, ${fmtDay(state.day)}`;
+  const host = $("dayChart");
+  if (!rs.length) { host.innerHTML = `<div id="status" style="padding:50px 0">Keine Preise für diesen Tag vorhanden.</div>`; $("dayLegend").innerHTML = ""; $("dayInfo").textContent = ""; return; }
+  const t0 = rs[0].t, hrs = (t) => (t - t0) / 3600000, n = rs.length / 4;
+  const show = renderDay.show || (renderDay.show = { tot: true, e: true, g: true });
+  $("dayLegend").innerHTML = ["tot", "e", "g"].map((k) => `<label><input type="checkbox" data-k="${k}" ${show[k] ? "checked" : ""}> <i style="background:${COLORS[k]}"></i>${NAMES[k]}</label>`).join("") +
+    `<span><i style="background:#1a1a1a;opacity:.5;height:2px"></i>Tages-Ø (Total)</span>`;
+  $("dayLegend").querySelectorAll("input").forEach((c) => c.onchange = () => { show[c.dataset.k] = c.checked; renderDay(); });
+  const avgTot = mean(rs.map((r) => r.tot));
+  const series = ["g", "e", "tot"].filter((k) => show[k]).map((k) => ({ pts: rs.map((r) => [hrs(r.t), r[k]]), color: COLORS[k], step: true, width: k === "tot" ? 2.4 : 1.6 }));
+  series.push({ pts: [[0, avgTot], [n, avgTot]], color: "#1a1a1a", width: 1, dash: "5 4" });
+  let mn = rs[0], mx = rs[0];
+  rs.forEach((r) => { if (r.tot < mn.tot) mn = r; if (r.tot > mx.tot) mx = r; });
+  const ticks = []; for (let h = 0; h <= n; h += 3) ticks.push({ x: h, label: hhmm(t0 + h * 3600000) });
+  drawChart(host, {
+    xmin: 0, xmax: n, ticks, series, stepW: 0.25,
+    marks: show.tot ? [{ x: hrs(mn.t) + 0.125, y: mn.tot, color: "#1f9d55", label: rp(mn.tot), below: true }, { x: hrs(mx.t) + 0.125, y: mx.tot, color: "#E30613", label: rp(mx.tot) }] : [],
+    tipFn: (x) => {
+      const i = Math.max(0, Math.min(rs.length - 1, Math.floor(x * 4)));
+      const r = rs[i];
+      return `<b>${pad(r.h)}:${pad(r.m)}–${hhmm(r.t + 900000)}</b><br>Total&nbsp;&nbsp;${rp(r.tot)}<br>Energie ${rp(r.e)}<br>Netz&nbsp;&nbsp;&nbsp;${rp(r.g)}`;
+    },
+  });
+  $("dayInfo").innerHTML = `Ø ${rp(avgTot)} · Min ${rp(mn.tot)} (${pad(mn.h)}:${pad(mn.m)}) · Max ${rp(mx.tot)} (${pad(mx.h)}:${pad(mx.m)}) Rp./kWh · ${rs.length} Intervalle`;
+}
+
+function renderProfile() {
+  const rs = inPeriod(), k = state.metric;
+  $("profHint").textContent = `${NAMES[k]} · ${fmtDay(state.from)} – ${fmtDay(state.to)}`;
+  const host = $("profChart");
+  if (!rs.length) { host.innerHTML = ""; return; }
+  const sl = Array.from({ length: 96 }, () => []);
+  rs.forEach((r) => sl[r.slot].push(r[k]));
+  const avgPts = [], band = [];
+  sl.forEach((a, i) => { if (a.length) { avgPts.push([i / 4, mean(a)]); band.push([i / 4, Math.min(...a), Math.max(...a)]); } });
+  const dayRs = rows.filter((r) => r.day === state.day);
+  const series = [{ pts: avgPts, color: "#E30613", step: true, width: 2.4 }];
+  if (dayRs.length) series.push({ pts: dayRs.map((r) => [r.slot / 4, r[k]]), color: "#1a1a1a", step: true, width: 1.4, dash: "4 3" });
+  const ticks = []; for (let h = 0; h <= 24; h += 2) ticks.push({ x: h, label: pad(h) + ":00" });
+  const dmap = new Map(dayRs.map((r) => [r.slot, r[k]]));
+  drawChart(host, {
+    xmin: 0, xmax: 24, ticks, series, band: { pts: band, color: "rgba(227,6,19,.18)" }, stepW: 0.25,
+    tipFn: (x) => {
+      const i = Math.max(0, Math.min(95, Math.floor(x * 4))), a = sl[i];
+      if (!a.length) return null;
+      return `<b>${pad(Math.floor(i / 4))}:${pad((i % 4) * 15)}</b><br>Ø&nbsp;&nbsp;${rp(mean(a))}<br>Min ${rp(Math.min(...a))}<br>Max ${rp(Math.max(...a))}` + (dmap.has(i) ? `<br>${fmtDay(state.day).slice(0, 5)}: ${rp(dmap.get(i))}` : "");
+    },
+  });
+}
+
+function blockLabel(b) { return `${b * 2}–${b * 2 + 2} h`; }
+function renderBlocks() {
+  const rs = inPeriod(), k = state.metric;
+  $("blockHint").textContent = `${NAMES[k]} · ${fmtDay(state.from)} – ${fmtDay(state.to)}`;
+  const blocks = Array.from({ length: 12 }, () => []);
+  rs.forEach((r) => blocks[Math.floor(r.h / 2)].push(r[k]));
+  const avgs = blocks.map((a) => mean(a)).filter((v) => v != null);
+  const bmin = Math.min(...avgs), bmax = Math.max(...avgs);
+  const all = rs.map((r) => r[k]);
+  let h = `<thead><tr><th>Zeitblock</th><th>Ø Rp./kWh</th><th>Min</th><th>Max</th><th>Spanne</th><th>Δ zum Tages-Ø</th><th>Intervalle</th></tr></thead><tbody>`;
+  const dayAvg = mean(all);
+  blocks.forEach((a, b) => {
+    if (!a.length) { h += `<tr><td>${blockLabel(b)}</td><td colspan="6">–</td></tr>`; return; }
+    const av = mean(a), mn = Math.min(...a), mx = Math.max(...a);
+    const cls = av === bmin ? "cheap" : av === bmax ? "dear" : "";
+    const d = av - dayAvg;
+    h += `<tr><td>${blockLabel(b)}</td><td class="${cls}">${rp(av)}</td><td>${rp(mn)}</td><td>${rp(mx)}</td><td>${rp(mx - mn)}</td><td>${d >= 0 ? "+" : ""}${rp(d)}</td><td>${a.length}</td></tr>`;
+  });
+  if (all.length) h += `<tr class="sum"><td>Gesamt (24 h)</td><td>${rp(dayAvg)}</td><td>${rp(Math.min(...all))}</td><td>${rp(Math.max(...all))}</td><td>${rp(Math.max(...all) - Math.min(...all))}</td><td>–</td><td>${all.length}</td></tr>`;
+  $("blockTable").innerHTML = h + "</tbody>";
+}
+
+function renderMatrix() {
+  const rs = inPeriod(), k = state.metric;
+  const days = [...byDay(rs).entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  const cells = days.map(([d, a]) => {
+    const bl = Array.from({ length: 12 }, () => []);
+    a.forEach((r) => bl[Math.floor(r.h / 2)].push(r[k]));
+    return { d, bl: bl.map((x) => mean(x)), avg: mean(a.map((r) => r[k])), n: a.length };
+  });
+  const vals = cells.flatMap((c) => c.bl).filter((v) => v != null);
+  const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2;
+  const bg = (v) => {
+    if (v == null) return "";
+    const t = hi === lo ? 0 : (v - lo) / (hi - lo);
+    return t < 0.5 ? `background:rgba(31,157,85,${(0.4 * (1 - t * 2)).toFixed(2)})` : `background:rgba(227,6,19,${(0.4 * (t * 2 - 1)).toFixed(2)})`;
+  };
+  let h = `<thead><tr><th>Tag</th>${Array.from({ length: 12 }, (_, b) => `<th>${b * 2}–${b * 2 + 2}</th>`).join("")}<th>Tages-Ø</th></tr></thead><tbody>`;
+  cells.forEach((c) => {
+    h += `<tr><td><a href="#" data-day="${c.d}" style="color:inherit;text-decoration:none">${wd(c.d)} ${fmtDay(c.d).slice(0, 5)}</a>${c.n !== 96 ? ` <span style="color:#999;font-size:.7rem">(${c.n})</span>` : ""}</td>${c.bl.map((v) => `<td style="${bg(v)}">${rp(v)}</td>`).join("")}<td><b>${rp(c.avg)}</b></td></tr>`;
+  });
+  $("matrix").innerHTML = h + "</tbody>";
+  $("matrix").querySelectorAll("a[data-day]").forEach((a) => a.onclick = (e) => { e.preventDefault(); setDay(a.dataset.day); window.scrollTo({ top: $("dayChart").offsetTop - 120, behavior: "smooth" }); });
+}
+
+function renderAll() {
+  renderKpis(); renderDay(); renderProfile(); renderBlocks(); renderMatrix();
+  $("quick").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
+}
+
+// ---------- Interaction ----------
+async function apply(fromTo) {
+  if (fromTo) { state.from = fromTo.from; state.to = fromTo.to; }
+  if (state.from > state.to) [state.from, state.to] = [state.to, state.from];
+  $("from").value = state.from; $("to").value = state.to;
+  try { await ensureLoaded(state.from < state.day ? state.from : state.day, state.to > state.day ? state.to : state.day); }
+  catch (e) { $("status").style.display = ""; $("status").innerHTML = `<span class="err">Fehler beim Laden: ${e.message}</span>`; return; }
+  renderAll();
+}
+async function setDay(d) {
+  state.day = d;
+  try { await ensureLoaded(d < loaded.from ? d : loaded.from, d > loaded.to ? d : loaded.to); } catch (e) {}
+  renderDay(); renderProfile();
+}
+function quick(days) {
+  const last = meta.last || todayYmd(), first = meta.first || last;
+  const to = last;
+  const from = days ? addDays(to, -(days - 1)) : first;
+  apply({ from: from < first ? first : from, to });
+}
+
+async function init() {
+  const today = todayYmd();
+  const to0 = addDays(today, 1), from0 = addDays(today, -13);
+  try { await ensureLoaded(from0, to0); }
+  catch (e) { $("status").innerHTML = `<span class="err">Fehler beim Laden: ${e.message}</span>`; return; }
+  if (!rows.length) { $("status").textContent = "Keine Preisdaten vorhanden."; return; }
+  const last = meta.last || today;
+  const first = meta.first || from0;
+  state.to = last; state.from = from0 < first ? first : from0;
+  state.day = rows.some((r) => r.day === today) ? today : last;
+  $("status").style.display = "none"; $("content").style.display = "";
+  $("from").value = state.from; $("to").value = state.to;
+  if (meta.first) { $("from").min = $("day").min = meta.first; $("to").min = meta.first; }
+  if (meta.last) { $("to").max = $("from").max = $("day").max = meta.last; }
+  $("from").onchange = () => $("from").value && apply({ from: $("from").value, to: state.to });
+  $("to").onchange = () => $("to").value && apply({ from: state.from, to: $("to").value });
+  $("day").onchange = () => $("day").value && setDay($("day").value);
+  $("prev").onclick = () => setDay(addDays(state.day, -1));
+  $("next").onclick = () => setDay(addDays(state.day, 1));
+  $("today").onclick = () => setDay(today);
+  $("metric").onchange = () => { state.metric = $("metric").value; renderAll(); };
+  $("quick").querySelectorAll("button").forEach((b) => b.onclick = () => { quick(+b.dataset.days); });
+  renderAll();
+}
+init();
+</script>
+</body>
+</html>

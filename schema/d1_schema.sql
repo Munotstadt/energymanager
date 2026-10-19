@@ -63,3 +63,20 @@ CREATE TABLE IF NOT EXISTS solarmanager_daily_stats_by_device (
 
 CREATE INDEX IF NOT EXISTS idx_live_points_fetched_at ON solarmanager_live_points(fetched_at);
 CREATE INDEX IF NOT EXISTS idx_live_devices_device_fetched ON solarmanager_live_devices(device_id, fetched_at);
+
+-- Dynamischer EKZ-Stromtarif (15-Min-Intervalle, Zeiten in UTC), befuellt durch Worker ekz-dynamic-price-collector
+CREATE TABLE IF NOT EXISTS ekz_energy_prices_dynamic (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  valid_from TEXT NOT NULL UNIQUE,
+  valid_to TEXT NOT NULL,
+  electricity_CHFkWh REAL,
+  grid_CHFkWh REAL,
+  total_CHFkWh REAL,
+  regional_fees_CHFkWh REAL,
+  electricity_CHFm REAL,
+  grid_CHFm REAL,
+  metering_CHFm REAL,
+  publication_timestamp TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  modified_at TEXT DEFAULT (datetime('now'))
+);

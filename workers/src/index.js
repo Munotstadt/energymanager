@@ -934,6 +934,37 @@ function zurichDayRangeUtc(dateStr) {
   return { startUtc, endUtc };
 }
 
+// Dynamische EKZ-Preise (15-Min-Intervalle) fuer einen Zurich-Datumsbereich.
+// GET /api/data/dynamic-prices?from=YYYY-MM-DD&to=YYYY-MM-DD (beide inklusive; ohne Parameter: letzte 30 Tage)
+async function handleDynamicPrices(request, env) {
+  const url = new URL(request.url);
+  const isDate = (v) => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const todayIso = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+  let to = url.searchParams.get("to");
+  let from = url.searchParams.get("from");
+  if (!isDate(to)) to = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(Date.now() + 2 * 86400000));
+  if (!isDate(from)) from = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(Date.now() - 30 * 86400000));
+  if (from > to) [from, to] = [to, from];
+  const spanDays = (Date.parse(to) - Date.parse(from)) / 86400000;
+  if (spanDays > 400) return jsonResponse({ error: "Zeitraum zu gross (max. 400 Tage)" }, 400);
+  const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const startIso = iso(zurichDayRangeUtc(from).startUtc);
+  const endIso = iso(zurichDayRangeUtc(to).endUtc);
+  const [rows, bounds] = await Promise.all([
+    env.DB.prepare(`
+      SELECT valid_from, valid_to, electricity_CHFkWh, grid_CHFkWh, total_CHFkWh
+      FROM ekz_energy_prices_dynamic
+      WHERE valid_from >= ? AND valid_from < ?
+      ORDER BY valid_from`).bind(startIso, endIso).all(),
+    env.DB.prepare("SELECT MIN(valid_from) AS first_from, MAX(valid_from) AS last_from FROM ekz_energy_prices_dynamic").first(),
+  ]);
+  return jsonResponse({
+    generated_at: nowZurich(), today: todayIso, from, to,
+    first_from: bounds?.first_from ?? null, last_from: bounds?.last_from ?? null,
+    row_count: rows.results.length, data: rows.results,
+  });
+}
+
 async function handleLiveData(request, env) {
   const db = env.DB;
   const url = new URL(request.url);
@@ -1073,6 +1104,8 @@ export default {
         resp = await handleScheduleCancel(request, env);
       } else if (pathname === "/api/data/live" && request.method === "GET") {
         resp = await handleLiveData(request, env);
+      } else if (pathname === "/api/data/dynamic-prices" && request.method === "GET") {
+        resp = await handleDynamicPrices(request, env);
       } else if (pathname === "/api/data/car" && request.method === "GET") {
         resp = await handleCarData(request, env);
       } else if (pathname.startsWith("/api/data/") && request.method === "GET") {
