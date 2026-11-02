@@ -140,6 +140,21 @@
 
     <div class="kpis" id="kpis"></div>
 
+    <h2>Kostenvergleich Dynamisch vs. Fix <span class="hint" id="cmpHint"></span></h2>
+    <div class="kpis" id="cmpKpis"></div>
+    <div class="card" style="margin-top:10px">
+      <div class="legend">
+        <span><i style="background:#1f9d55;height:10px"></i>dynamisch günstiger</span>
+        <span><i style="background:#E30613;height:10px"></i>dynamisch teurer</span>
+        <span>Differenz = Kosten dynamisch − Kosten fix (CHF/Tag)</span>
+      </div>
+      <div class="chart-wrap" id="cmpChart"></div>
+    </div>
+    <div class="card" style="margin-top:10px">
+      <div class="table-scroll"><table id="cmpTable"></table></div>
+      <div class="footnotes">Kosten dynamisch = Σ (Netzbezug im 15-Min-Intervall × dynamischer Total-Preis). Kosten fix = Σ (Netzbezug × aktueller EKZ-Fixpreis gemäss Tabelle <code>ekz_energy_prices</code>). Netzbezug aus dem Bezugszähler des Smart Meters (Zählerstand ca. alle 10 Min., an den Intervallgrenzen interpoliert). Nur Arbeitspreise pro kWh; monatliche Grundgebühren sind nicht enthalten. <span id="cmpEstNote"></span></div>
+    </div>
+
     <h2>Tagesverlauf <span class="hint">15-Minuten-Intervalle</span></h2>
     <div class="card">
       <div class="daynav">
@@ -182,6 +197,7 @@
 <script>
 const TZ = "Europe/Zurich";
 const API = "/api/data/dynamic-prices";
+const API_CMP = "/api/data/dynamic-vs-fix";
 const CACHE_PREFIX = "munotstadt_dynprice_v1_";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const COLORS = { tot: "#E30613", e: "#1f6feb", g: "#8a8a8a" };
@@ -206,6 +222,8 @@ const rp = (v) => (v == null || isNaN(v) ? "–" : v.toFixed(2));
 let rows = [];            // {t, day, h, m, slot, e, g, tot} (Rp./kWh)
 let loaded = { from: null, to: null };
 let meta = { first: null, last: null };
+let cmpError = null;
+let cmp = new Map();      // t (ms) -> {day, dyn, fix, kwh, est}  (CHF/kWh, kWh)
 let state = { from: null, to: null, day: null, metric: "tot" };
 
 // ---------- Data ----------
@@ -217,13 +235,13 @@ function normalize(data) {
       e: (r.electricity_CHFkWh ?? 0) * 100, g: (r.grid_CHFkWh ?? 0) * 100, tot: r.total_CHFkWh * 100 };
   });
 }
-async function fetchRange(from, to) {
-  const key = CACHE_PREFIX + from + "_" + to;
+async function fetchRange(from, to, api = API, tag = "") {
+  const key = CACHE_PREFIX + tag + from + "_" + to;
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(key)); } catch (e) {}
   const fresh = cached && Date.now() - cached.ts < CACHE_TTL_MS;
   const doFetch = async () => {
-    const res = await fetch(`${API}?from=${from}&to=${to}`, { cache: "no-store", credentials: "include" });
+    const res = await fetch(`${api}?from=${from}&to=${to}`, { cache: "no-store", credentials: "include" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const j = await res.json();
     try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), payload: j })); } catch (e) {}
@@ -236,8 +254,14 @@ async function ensureLoaded(from, to) {
   if (loaded.from && from >= loaded.from && to <= loaded.to) return;
   const f = loaded.from ? (from < loaded.from ? from : loaded.from) : from;
   const t = loaded.to ? (to > loaded.to ? to : loaded.to) : to;
-  const j = await fetchRange(f, t);
+  const [j, jc] = await Promise.all([
+    fetchRange(f, t),
+    fetchRange(f, t, API_CMP, "cmp_").catch((e) => ({ error: e.message, data: [] })),
+  ]);
   rows = normalize(j.data);
+  cmp = new Map();
+  for (const r of jc.data || []) cmp.set(Date.parse(r.valid_from), { day: r.day, dyn: r.dyn_CHFkWh, fix: r.fix_CHFkWh, kwh: r.grid_kWh, est: r.est });
+  cmpError = jc.error || null;
   loaded = { from: f, to: t };
   meta = { first: j.first_from ? localParts(Date.parse(j.first_from)).ymd : null, last: j.last_from ? localParts(Date.parse(j.last_from)).ymd : null };
   $("footer").textContent = "Daten geladen: " + (j.generated_at || "");
@@ -353,10 +377,16 @@ function renderDay() {
     tipFn: (x) => {
       const i = Math.max(0, Math.min(rs.length - 1, Math.floor(x * 4)));
       const r = rs[i];
-      return `<b>${pad(r.h)}:${pad(r.m)}–${hhmm(r.t + 900000)}</b><br>Total&nbsp;&nbsp;${rp(r.tot)}<br>Energie ${rp(r.e)}<br>Netz&nbsp;&nbsp;&nbsp;${rp(r.g)}`;
+      const c = cmp.get(r.t);
+      const extra = c && c.kwh != null ? `<br>Bezug&nbsp;&nbsp;${c.kwh.toFixed(3)} kWh<br>Kosten dyn ${(c.kwh * c.dyn * 100).toFixed(1)} Rp.<br>Kosten fix ${c.fix != null ? (c.kwh * c.fix * 100).toFixed(1) : "–"} Rp.` : "";
+      return `<b>${pad(r.h)}:${pad(r.m)}–${hhmm(r.t + 900000)}</b><br>Total&nbsp;&nbsp;${rp(r.tot)}<br>Energie ${rp(r.e)}<br>Netz&nbsp;&nbsp;&nbsp;${rp(r.g)}${extra}`;
     },
   });
-  $("dayInfo").innerHTML = `Ø ${rp(avgTot)} · Min ${rp(mn.tot)} (${pad(mn.h)}:${pad(mn.m)}) · Max ${rp(mx.tot)} (${pad(mx.h)}:${pad(mx.m)}) Rp./kWh · ${rs.length} Intervalle`;
+  const da = dayAgg(state.day);
+  const cmpTxt = da && da.n
+    ? `<br>Netzbezug ${da.kwh.toFixed(2)} kWh${da.complete ? "" : ` (${da.n}/${da.total} Intervalle)`} · Kosten dynamisch <b>${chf(da.dyn)}</b> · fix <b>${chf(da.fix)}</b> · Differenz <b style="color:${da.dyn - da.fix <= 0 ? "#1f9d55" : "#E30613"}">${sgn(da.dyn - da.fix)} CHF</b>`
+    : "";
+  $("dayInfo").innerHTML = `Ø ${rp(avgTot)} · Min ${rp(mn.tot)} (${pad(mn.h)}:${pad(mn.m)}) · Max ${rp(mx.tot)} (${pad(mx.h)}:${pad(mx.m)}) Rp./kWh · ${rs.length} Intervalle${cmpTxt}`;
 }
 
 function renderProfile() {
@@ -428,8 +458,80 @@ function renderMatrix() {
   $("matrix").querySelectorAll("a[data-day]").forEach((a) => a.onclick = (e) => { e.preventDefault(); setDay(a.dataset.day); window.scrollTo({ top: $("dayChart").offsetTop - 120, behavior: "smooth" }); });
 }
 
+// ---------- Kostenvergleich ----------
+const chf = (v) => (v == null || isNaN(v) ? "–" : v.toFixed(2));
+const sgn = (v) => (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(2);
+// Aggregat eines Tages: nur Intervalle mit Preis UND Netzbezug
+function dayAgg(day) {
+  let total = 0, n = 0, kwh = 0, dyn = 0, fix = 0, est = 0, fixMissing = false;
+  for (const c of cmp.values()) {
+    if (c.day !== day) continue;
+    total++;
+    if (c.kwh == null) continue;
+    n++; kwh += c.kwh; dyn += c.kwh * c.dyn;
+    if (c.fix == null) fixMissing = true; else fix += c.kwh * c.fix;
+    if (c.est) est++;
+  }
+  if (!total) return null;
+  return { day, total, n, kwh, dyn, fix: fixMissing ? null : fix, est, complete: n === total && total >= 92 };
+}
+function renderCmp() {
+  $("cmpHint").textContent = `${fmtDay(state.from)} – ${fmtDay(state.to)} · nur Tage mit Preisen und Zählerdaten`;
+  if (cmpError) { $("cmpKpis").innerHTML = `<div class="kpi"><div class="l">Fehler</div><div class="s err">${cmpError}</div></div>`; $("cmpChart").innerHTML = ""; $("cmpTable").innerHTML = ""; return; }
+  const days = [...new Set([...cmp.values()].map((c) => c.day))].filter((d) => d >= state.from && d <= state.to).sort();
+  const aggs = days.map(dayAgg).filter((a) => a && a.n > 0);
+  const full = aggs.filter((a) => a.complete && a.fix != null);
+  if (!aggs.length) {
+    $("cmpKpis").innerHTML = `<div class="kpi"><div class="l">Keine Daten</div><div class="s">kein Netzbezug für Tage mit dynamischen Preisen im Zeitraum</div></div>`;
+    $("cmpChart").innerHTML = ""; $("cmpTable").innerHTML = ""; $("cmpEstNote").textContent = ""; return;
+  }
+  const S = (arr, k) => arr.reduce((s, a) => s + a[k], 0);
+  const kwh = S(full, "kwh"), cd = S(full, "dyn"), cf = S(full, "fix"), diff = cd - cf;
+  const cheaper = full.filter((a) => a.dyn < a.fix).length;
+  const kpi = (l, v, u, s, col) => `<div class="kpi"><div class="l">${l}</div><div class="v"${col ? ` style="color:${col}"` : ""}>${v}<small> ${u}</small></div><div class="s">${s}</div></div>`;
+  $("cmpKpis").innerHTML =
+    kpi("Netzbezug", kwh.toFixed(1), "kWh", `${full.length} vollständige Tage`) +
+    kpi("Kosten fix", chf(cf), "CHF", `Ø ${kwh ? (cf / kwh * 100).toFixed(2) : "–"} Rp./kWh`) +
+    kpi("Kosten dynamisch", chf(cd), "CHF", `Ø ${kwh ? (cd / kwh * 100).toFixed(2) : "–"} Rp./kWh (verbrauchsgewichtet)`) +
+    kpi(diff <= 0 ? "Ersparnis dynamisch" : "Mehrkosten dynamisch", Math.abs(diff).toFixed(2), "CHF",
+      `${cf ? (diff / cf * 100 >= 0 ? "+" : "") + (diff / cf * 100).toFixed(1) + " %" : "–"} · an ${cheaper} von ${full.length} Tagen günstiger`, diff <= 0 ? "#1f9d55" : "#E30613");
+
+  // Balken: Differenz pro Tag (chronologisch)
+  const W = 1100, H = 240, m = { l: 48, r: 16, t: 12, b: 28 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const vals = aggs.map((a) => (a.fix == null ? 0 : a.dyn - a.fix));
+  let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+  const st = niceStep((hi - lo) || 1); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st; if (hi === lo) hi = lo + st;
+  const Y = (v) => m.t + ih - (v - lo) / (hi - lo) * ih, bw = iw / aggs.length;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  for (let v = lo; v <= hi + 1e-9; v += st) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e8e8e8"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(st < 1 ? (st < 0.1 ? 2 : 1) : 0)}</text>`;
+  const every = Math.max(1, Math.ceil(aggs.length / 14));
+  aggs.forEach((a, i) => {
+    const v = vals[i], x = m.l + i * bw, y = Math.min(Y(v), Y(0)), h = Math.max(1, Math.abs(Y(v) - Y(0)));
+    const col = v <= 0 ? "#1f9d55" : "#E30613";
+    s += `<rect x="${(x + bw * 0.15).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}" fill="${col}" fill-opacity="${a.complete ? 0.85 : 0.35}"><title>${wd(a.day)} ${fmtDay(a.day)}: ${sgn(v)} CHF (dyn ${chf(a.dyn)} / fix ${chf(a.fix)})${a.complete ? "" : " · unvollständig"}</title></rect>`;
+    if (i % every === 0) s += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${fmtDay(a.day).slice(0, 5)}</text>`;
+  });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#1a1a1a"/></svg>`;
+  $("cmpChart").innerHTML = s;
+
+  // Tabelle (neueste zuerst)
+  let h = `<thead><tr><th>Tag</th><th>Netzbezug kWh</th><th>Fixpreis Rp./kWh</th><th>Ø dyn. Rp./kWh</th><th>Kosten fix CHF</th><th>Kosten dyn. CHF</th><th>Differenz CHF</th><th>Differenz %</th></tr></thead><tbody>`;
+  aggs.slice().reverse().forEach((a) => {
+    const d = a.fix == null ? null : a.dyn - a.fix;
+    const fixP = a.kwh && a.fix != null ? a.fix / a.kwh * 100 : null;
+    const note = a.complete ? "" : ` <span style="color:#999;font-size:.7rem">(teilweise ${a.n}/${a.total})</span>`;
+    const estMark = a.est ? ` <span title="${a.est} Intervalle mit Zählerlücke > 30 Min., gleichmässig verteilt" style="color:#b9770e">*</span>` : "";
+    h += `<tr${a.complete ? "" : ' style="color:#999"'}><td><a href="#" data-day="${a.day}" style="color:inherit;text-decoration:none">${wd(a.day)} ${fmtDay(a.day)}</a>${note}${estMark}</td><td>${a.kwh.toFixed(2)}</td><td>${fixP == null ? "–" : fixP.toFixed(2)}</td><td>${a.kwh ? (a.dyn / a.kwh * 100).toFixed(2) : "–"}</td><td>${chf(a.fix)}</td><td>${chf(a.dyn)}</td><td class="${d == null ? "" : d <= 0 ? "cheap" : "dear"}">${d == null ? "–" : sgn(d)}</td><td>${d == null || !a.fix ? "–" : (d / a.fix * 100 >= 0 ? "+" : "") + (d / a.fix * 100).toFixed(1)}</td></tr>`;
+  });
+  if (full.length) h += `<tr class="sum"><td>Total ${full.length} vollst. Tage</td><td>${kwh.toFixed(2)}</td><td>${kwh ? (cf / kwh * 100).toFixed(2) : "–"}</td><td>${kwh ? (cd / kwh * 100).toFixed(2) : "–"}</td><td>${chf(cf)}</td><td>${chf(cd)}</td><td class="${diff <= 0 ? "cheap" : "dear"}">${sgn(diff)}</td><td>${cf ? (diff / cf * 100 >= 0 ? "+" : "") + (diff / cf * 100).toFixed(1) : "–"}</td></tr>`;
+  $("cmpTable").innerHTML = h + "</tbody>";
+  $("cmpTable").querySelectorAll("a[data-day]").forEach((a) => a.onclick = (e) => { e.preventDefault(); setDay(a.dataset.day); window.scrollTo({ top: $("dayChart").offsetTop - 120, behavior: "smooth" }); });
+  const anyEst = aggs.some((a) => a.est);
+  $("cmpEstNote").textContent = (anyEst ? "* Zählerlücke > 30 Min.: Bezug gleichmässig auf die Intervalle verteilt (Tagessumme korrekt, Intervall-Zuordnung geschätzt). " : "") + "Grau = unvollständiger Tag (nicht im Total).";
+}
+
 function renderAll() {
-  renderKpis(); renderDay(); renderProfile(); renderBlocks(); renderMatrix();
+  renderKpis(); renderCmp(); renderDay(); renderProfile(); renderBlocks(); renderMatrix();
   $("quick").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
 }
 

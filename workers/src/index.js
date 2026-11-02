@@ -965,6 +965,99 @@ async function handleDynamicPrices(request, env) {
   });
 }
 
+// Kostenvergleich dynamischer vs. fixer EKZ-Tarif pro 15-Min-Intervall.
+// Netzbezug kommt aus dem kumulierten Bezugszaehler des Smart Meters
+// (CurrentEnergyPurchaseTariff1, Wh) in solarmanager_live_devices (~10-Min-Takt).
+// Der Zaehlerstand wird an jeder Intervallgrenze linear interpoliert, die
+// Differenz ergibt den Bezug im Intervall. Luecken > MAX_GAP_MIN werden
+// gleichmaessig verteilt und als `est` markiert (Tagessumme bleibt korrekt).
+// GET /api/data/dynamic-vs-fix?from=YYYY-MM-DD&to=YYYY-MM-DD
+const GRID_METER_DEVICE_ID = "6516885afd811a3c709c5bc2";
+const MAX_GAP_MIN = 30;
+
+async function handleDynamicVsFix(request, env) {
+  const url = new URL(request.url);
+  const isDate = (v) => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const fmtZ = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" });
+  let to = url.searchParams.get("to");
+  let from = url.searchParams.get("from");
+  if (!isDate(to)) to = fmtZ.format(new Date());
+  if (!isDate(from)) from = fmtZ.format(new Date(Date.now() - 30 * 86400000));
+  if (from > to) [from, to] = [to, from];
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 400) {
+    return jsonResponse({ error: "Zeitraum zu gross (max. 400 Tage)" }, 400);
+  }
+  const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const start = zurichDayRangeUtc(from).startUtc;
+  const end = zurichDayRangeUtc(to).endUtc;
+  const meterId = env.GRID_METER_DEVICE_ID || GRID_METER_DEVICE_ID;
+  // Zaehlerstaende mit Puffer, damit die Randintervalle interpoliert werden koennen
+  const padMs = 6 * 3600000;
+
+  const [priceRes, meterRes, fixRes] = await Promise.all([
+    env.DB.prepare(`
+      SELECT valid_from, valid_to, total_CHFkWh
+      FROM ekz_energy_prices_dynamic
+      WHERE valid_from >= ? AND valid_from < ? AND total_CHFkWh IS NOT NULL
+      ORDER BY valid_from`).bind(iso(start), iso(end)).all(),
+    env.DB.prepare(`
+      SELECT fetched_at, CAST(json_extract(raw_json, '$.CurrentEnergyPurchaseTariff1') AS REAL) AS wh
+      FROM solarmanager_live_devices
+      WHERE device_id = ? AND fetched_at >= ? AND fetched_at < ?
+      ORDER BY fetched_at`).bind(meterId, new Date(start.getTime() - padMs).toISOString(), new Date(end.getTime() + padMs).toISOString()).all(),
+    env.DB.prepare(`
+      SELECT valid_from, valid_to, from_grid_CHFkWh, status
+      FROM ekz_energy_prices ORDER BY valid_from`).all(),
+  ]);
+
+  // Zaehlerreihe bereinigen: nur gueltige, monoton steigende Werte
+  const pts = [];
+  for (const r of meterRes.results || []) {
+    const t = Date.parse(r.fetched_at), v = Number(r.wh);
+    if (!isFinite(t) || !isFinite(v) || v <= 0) continue;
+    if (pts.length && (t <= pts[pts.length - 1].t || v < pts[pts.length - 1].v)) continue;
+    pts.push({ t, v });
+  }
+  // Interpolierter Zaehlerstand bei t -> {v, gap} oder null (ausserhalb der Daten)
+  let k = 0;
+  const counterAt = (t) => {
+    if (!pts.length || t < pts[0].t || t > pts[pts.length - 1].t) return null;
+    while (k > 0 && pts[k].t > t) k--;
+    while (k < pts.length - 2 && pts[k + 1].t < t) k++;
+    const a = pts[k], b = pts[Math.min(k + 1, pts.length - 1)];
+    if (b.t === a.t) return { v: a.v, gap: 0 };
+    return { v: a.v + (b.v - a.v) * (t - a.t) / (b.t - a.t), gap: (b.t - a.t) / 60000 };
+  };
+
+  const fixRows = fixRes.results || [];
+  const fixFor = (ymd) => fixRows.find((f) => f.valid_from <= ymd && ymd <= f.valid_to) || null;
+
+  const data = [];
+  for (const p of priceRes.results || []) {
+    const t0 = Date.parse(p.valid_from), t1 = Date.parse(p.valid_to);
+    const ymd = fmtZ.format(new Date(t0));
+    const fix = fixFor(ymd);
+    const c0 = counterAt(t0), c1 = counterAt(t1);
+    const gridWh = c0 && c1 ? Math.max(0, c1.v - c0.v) : null;
+    data.push({
+      valid_from: p.valid_from,
+      day: ymd,
+      dyn_CHFkWh: p.total_CHFkWh,
+      fix_CHFkWh: fix ? fix.from_grid_CHFkWh : null,
+      grid_kWh: gridWh == null ? null : Math.round(gridWh) / 1000,
+      est: !!(c0 && c1 && Math.max(c0.gap, c1.gap) > MAX_GAP_MIN),
+    });
+  }
+
+  return jsonResponse({
+    generated_at: nowZurich(), from, to, meter_device_id: meterId,
+    meter_first: pts.length ? new Date(pts[0].t).toISOString() : null,
+    meter_last: pts.length ? new Date(pts[pts.length - 1].t).toISOString() : null,
+    fix_tariffs: fixRows,
+    row_count: data.length, data,
+  });
+}
+
 async function handleLiveData(request, env) {
   const db = env.DB;
   const url = new URL(request.url);
@@ -1106,6 +1199,8 @@ export default {
         resp = await handleLiveData(request, env);
       } else if (pathname === "/api/data/dynamic-prices" && request.method === "GET") {
         resp = await handleDynamicPrices(request, env);
+      } else if (pathname === "/api/data/dynamic-vs-fix" && request.method === "GET") {
+        resp = await handleDynamicVsFix(request, env);
       } else if (pathname === "/api/data/car" && request.method === "GET") {
         resp = await handleCarData(request, env);
       } else if (pathname.startsWith("/api/data/") && request.method === "GET") {
