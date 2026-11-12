@@ -1,11 +1,14 @@
 // ekz-dynamic-price-collector
-// Holt täglich (Cron 22:00 UTC) den dynamischen EKZ-Stromtarif für den Folgetag
-// und speichert ihn in D1 (DB "energy", Tabelle ekz_energy_prices_dynamic).
+// Holt täglich um 18:00 Zürcher Zeit (Backup 20:00) den dynamischen EKZ-Stromtarif
+// für den Folgetag und speichert ihn in D1 (DB "energy", Tabelle ekz_energy_prices_dynamic).
+// EKZ publiziert ca. 17:50 Uhr. Cloudflare-Crons laufen in UTC, daher stündlich
+// 16-19 UTC; ausgeführt wird nur zu den lokalen Stunden in RUN_HOURS (DST-sicher).
 
 const API_URL = "https://api.tariffs.ekz.ch/v1/tariffs";
 const ENERGY_TARIFF = "electricity_dynamic";
 const GRID_TARIFF = "grid_400D_inclFees";
 const TZ = "Europe/Zurich";
+const RUN_HOURS = [18, 20]; // Zürcher Lokalzeit: Hauptabruf + Backup
 
 // ---------- Zeit-Helfer (DST-sicher) ----------
 
@@ -35,9 +38,8 @@ function zurichMidnightUtc(ymd) {
   return new Date(guess.getTime() - minutes * 60000);
 }
 
-// Zieltag = der Tag, für den EKZ ab 18:00 Uhr (Vortag) publiziert.
-// Cron 22:00 UTC = 23:00 (Winter) bzw. 00:00 (Sommer) Zürcher Zeit:
-// ab 18:00 lokal -> morgen, davor (00:00-17:59) -> heute (= der am Vorabend publizierte Tag).
+// Zieltag = der Tag, für den EKZ ab ca. 17:50 Uhr (Vortag) publiziert.
+// Ab 18:00 lokal -> morgen, davor (00:00-17:59) -> heute (= der am Vorabend publizierte Tag).
 function targetWindow(now = new Date()) {
   const { ymd, hour } = zurichParts(now);
   const day = hour >= 18 ? addDays(ymd, 1) : ymd;
@@ -164,9 +166,20 @@ export default {
       return Response.json({ success: false, error: err.message }, { status: 500 });
     }
   },
-  // Cron: täglich 22:00 UTC
+  // Cron: stündlich 16-19 UTC; läuft nur um 18:00 und 20:00 Zürcher Zeit.
+  // Der 20-Uhr-Lauf ist das Backup und schreibt idempotent (Upsert), auch wenn 18 Uhr geklappt hat.
   async scheduled(event, env, ctx) {
-    const result = await run(env);
-    console.log(JSON.stringify(result));
+    const { hour } = zurichParts(new Date(event.scheduledTime));
+    if (!RUN_HOURS.includes(hour)) {
+      console.log(JSON.stringify({ skipped: true, zurich_hour: hour }));
+      return;
+    }
+    try {
+      const result = await run(env);
+      console.log(JSON.stringify({ zurich_hour: hour, ...result }));
+    } catch (err) {
+      console.error(JSON.stringify({ zurich_hour: hour, error: err.message }));
+      throw err;
+    }
   },
 };

@@ -1,10 +1,12 @@
-name = "ekz-dynamic-price-collector"
+# Name entspricht dem bestehenden Worker im Cloudflare-Dashboard (ohne "r")
+name = "ekz-dynamic-price-collecto"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# Täglich um 22:00 UTC
+# 18:00 Zürcher Zeit + Backup 20:00. Crons sind UTC: stündlich 16-19 UTC,
+# der Code führt nur zu den Lokalstunden 18 und 20 aus (Sommer 16+18 UTC, Winter 17+19 UTC).
 [triggers]
-crons = ["0 22 * * *"]
+crons = ["0 16-19 * * *"]
 
 [[d1_databases]]
 binding = "DB"
