@@ -994,7 +994,7 @@ async function handleDynamicVsFix(request, env) {
   // Zaehlerstaende mit Puffer, damit die Randintervalle interpoliert werden koennen
   const padMs = 6 * 3600000;
 
-  const [priceRes, meterRes, fixRes] = await Promise.all([
+  const [priceRes, meterRes, fixRes, histRes] = await Promise.all([
     env.DB.prepare(`
       SELECT valid_from, valid_to, total_CHFkWh
       FROM ekz_energy_prices_dynamic
@@ -1003,12 +1003,22 @@ async function handleDynamicVsFix(request, env) {
     env.DB.prepare(`
       SELECT fetched_at, CAST(json_extract(raw_json, '$.CurrentEnergyPurchaseTariff1') AS REAL) AS wh
       FROM solarmanager_live_devices
-      WHERE device_id = ? AND fetched_at >= ? AND fetched_at < ?
+      WHERE device_id = ? AND fetched_at >= ? AND fetched_at < ? AND json_valid(raw_json)
       ORDER BY fetched_at`).bind(meterId, new Date(start.getTime() - padMs).toISOString(), new Date(end.getTime() + padMs).toISOString()).all(),
     env.DB.prepare(`
       SELECT valid_from, valid_to, from_grid_CHFkWh, status
       FROM ekz_energy_prices ORDER BY valid_from`).all(),
+    // Nachgetragene 15-Min-Mittelwerte (CSV-Import, interval_secs = 900): Netzleistung in W, Bezug = positiver Anteil
+    env.DB.prepare(`
+      SELECT fetched_at, current_grid_power
+      FROM solarmanager_live_points
+      WHERE interval_secs = 900 AND fetched_at >= ? AND fetched_at < ?`).bind(iso(start), iso(end)).all(),
   ]);
+  const histGrid = new Map();
+  for (const r of histRes.results || []) {
+    if (r.current_grid_power == null) continue;
+    histGrid.set(iso(new Date(r.fetched_at)), Math.max(0, Number(r.current_grid_power)) * 0.25 / 1000);
+  }
 
   // Zaehlerreihe bereinigen: nur gueltige, monoton steigende Werte
   const pts = [];
@@ -1039,12 +1049,13 @@ async function handleDynamicVsFix(request, env) {
     const fix = fixFor(ymd);
     const c0 = counterAt(t0), c1 = counterAt(t1);
     const gridWh = c0 && c1 ? Math.max(0, c1.v - c0.v) : null;
+    const hist = gridWh == null ? histGrid.get(p.valid_from) : undefined;
     data.push({
       valid_from: p.valid_from,
       day: ymd,
       dyn_CHFkWh: p.total_CHFkWh,
       fix_CHFkWh: fix ? fix.from_grid_CHFkWh : null,
-      grid_kWh: gridWh == null ? null : Math.round(gridWh) / 1000,
+      grid_kWh: gridWh != null ? Math.round(gridWh) / 1000 : (hist != null ? Math.round(hist * 1000) / 1000 : null),
       est: !!(c0 && c1 && Math.max(c0.gap, c1.gap) > MAX_GAP_MIN),
     });
   }
