@@ -156,11 +156,75 @@ async function run(env, { dry = false } = {}) {
   return { day: win.day, rows_written: written };
 }
 
+// ---------- Backfill (historische Preise) ----------
+// GET /?backfill=2026-01-01..2026-01-31        schreibt (Upsert, idempotent)
+// GET /?backfill=2026-01-01..2026-01-31&dry=1  nur zählen, nichts speichern
+// Max. 31 Tage pro Aufruf (Subrequest-Limits); Zeitraum in Zürcher Kalendertagen, beide Enden inklusive.
+const BACKFILL_MAX_DAYS = 31;
+const BACKFILL_CHUNK_DAYS = 7;
+const BACKFILL_ROWS_PER_STMT = 300;
+
+const sqlNum = (v) => (v == null || !Number.isFinite(Number(v)) ? "NULL" : String(Number(v)));
+const sqlIso = (v) => (typeof v === "string" && /^[0-9T:+\-.Z]{10,40}$/.test(v) ? `'${v}'` : "NULL");
+
+async function storeRowsBulk(env, rows) {
+  const stmts = [];
+  for (let i = 0; i < rows.length; i += BACKFILL_ROWS_PER_STMT) {
+    const values = rows.slice(i, i + BACKFILL_ROWS_PER_STMT).map((r) =>
+      `(${sqlIso(r.valid_from)},${sqlIso(r.valid_to)},${sqlNum(r.electricity_CHFkWh)},${sqlNum(r.grid_CHFkWh)},${sqlNum(r.total_CHFkWh)},${sqlNum(r.regional_fees_CHFkWh)},${sqlNum(r.electricity_CHFm)},${sqlNum(r.grid_CHFm)},${sqlNum(r.metering_CHFm)},${sqlIso(r.publication_timestamp)})`
+    );
+    stmts.push(env.DB.prepare(`
+      INSERT INTO ekz_energy_prices_dynamic
+        (valid_from, valid_to, electricity_CHFkWh, grid_CHFkWh, total_CHFkWh, regional_fees_CHFkWh,
+         electricity_CHFm, grid_CHFm, metering_CHFm, publication_timestamp)
+      VALUES ${values.join(",")}
+      ON CONFLICT(valid_from) DO UPDATE SET
+        valid_to = excluded.valid_to,
+        electricity_CHFkWh = COALESCE(excluded.electricity_CHFkWh, electricity_CHFkWh),
+        grid_CHFkWh = COALESCE(excluded.grid_CHFkWh, grid_CHFkWh),
+        total_CHFkWh = COALESCE(excluded.total_CHFkWh, total_CHFkWh),
+        regional_fees_CHFkWh = COALESCE(excluded.regional_fees_CHFkWh, regional_fees_CHFkWh),
+        electricity_CHFm = COALESCE(excluded.electricity_CHFm, electricity_CHFm),
+        grid_CHFm = COALESCE(excluded.grid_CHFm, grid_CHFm),
+        metering_CHFm = COALESCE(excluded.metering_CHFm, metering_CHFm),
+        publication_timestamp = COALESCE(excluded.publication_timestamp, publication_timestamp),
+        modified_at = datetime('now')`));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  return rows.length;
+}
+
+async function backfill(env, spec, { dry = false } = {}) {
+  const m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(spec || "");
+  if (!m) throw new Error("Format: ?backfill=YYYY-MM-DD..YYYY-MM-DD");
+  const [, from, to] = m;
+  const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
+  if (!(days >= 1)) throw new Error("'bis' liegt vor 'von'");
+  if (days > BACKFILL_MAX_DAYS) throw new Error(`Max. ${BACKFILL_MAX_DAYS} Tage pro Aufruf (angefragt: ${days})`);
+
+  const chunks = [];
+  let total = 0;
+  for (let d = from; d <= to; d = addDays(d, BACKFILL_CHUNK_DAYS)) {
+    const last = addDays(d, BACKFILL_CHUNK_DAYS - 1) < to ? addDays(d, BACKFILL_CHUNK_DAYS - 1) : to;
+    const win = { day: d, start: zurichMidnightUtc(d), end: zurichMidnightUtc(addDays(last, 1)) };
+    const energy = await fetchTariff(env.ENERGY_TARIFF || ENERGY_TARIFF, win);
+    let grid = { publication_timestamp: null, prices: [] }, gridOk = true;
+    try { grid = await fetchTariff(env.GRID_TARIFF || GRID_TARIFF, win); } catch (e) { gridOk = false; }
+    const rows = mergeRows(energy, grid);
+    if (!dry) await storeRowsBulk(env, rows);
+    total += rows.length;
+    chunks.push({ from: d, to: last, rows: rows.length, grid_ok: gridOk, first: rows[0]?.valid_from, publication: energy.publication_timestamp });
+  }
+  return { backfill: `${from}..${to}`, dry, rows: total, chunks };
+}
+
 export default {
   // Manueller Abruf: GET /  (schreibt)  oder  GET /?dry=1  (nur anzeigen, nichts speichern)
   async fetch(request, env) {
     try {
-      const dry = new URL(request.url).searchParams.get("dry") === "1";
+      const q = new URL(request.url).searchParams;
+      const dry = q.get("dry") === "1";
+      if (q.get("backfill")) return Response.json({ success: true, ...(await backfill(env, q.get("backfill"), { dry })) });
       return Response.json({ success: true, ...(await run(env, { dry })) });
     } catch (err) {
       return Response.json({ success: false, error: err.message }, { status: 500 });
