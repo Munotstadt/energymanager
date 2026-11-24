@@ -1058,6 +1058,40 @@ async function handleDynamicVsFix(request, env) {
   });
 }
 
+// 15-Minuten-Leistungsdaten (Solarmanager-CSV-Export, Mittelwerte in W) -> solarmanager_power_15min
+// POST /api/upload/solarmanager-15min  Body: {"rows":[[iso, consumption, production, batCharge, batDischarge, grid, car, entfeuchter, wasserpumpe], ...]}
+// Die CSV wird im Browser (public/import-15min.html) geparst; der Worker schreibt nur (Upsert, idempotent).
+async function handlePower15minUpload(request, env) {
+  const body = await request.json().catch(() => null);
+  const rows = body && Array.isArray(body.rows) ? body.rows : null;
+  if (!rows || rows.length === 0) return jsonResponse({ error: "rows fehlt" }, 400);
+  if (rows.length > 1500) return jsonResponse({ error: "max. 1500 Zeilen pro Aufruf" }, 400);
+  const num = (v) => { const n = Number(v); return v === null || v === "" || !Number.isFinite(n) ? "NULL" : String(n); };
+  const values = [];
+  for (const r of rows) {
+    const t = Date.parse(r[0]);
+    if (!Number.isFinite(t)) continue;
+    const iso = new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
+    values.push(`('${iso}',${num(r[1])},${num(r[2])},${num(r[3])},${num(r[4])},${num(r[5])},${num(r[6])},${num(r[7])},${num(r[8])})`);
+  }
+  if (values.length === 0) return jsonResponse({ error: "keine gueltigen Zeilen" }, 400);
+  const stmts = [];
+  for (let i = 0; i < values.length; i += 300) {
+    stmts.push(env.DB.prepare(`
+      INSERT INTO solarmanager_power_15min
+        (valid_from, consumption_w, production_w, battery_charging_w, battery_discharging_w, grid_w, car_charging_w, entfeuchter_w, wasserpumpe_w)
+      VALUES ${values.slice(i, i + 300).join(",")}
+      ON CONFLICT(valid_from) DO UPDATE SET
+        consumption_w = excluded.consumption_w, production_w = excluded.production_w,
+        battery_charging_w = excluded.battery_charging_w, battery_discharging_w = excluded.battery_discharging_w,
+        grid_w = excluded.grid_w, car_charging_w = excluded.car_charging_w,
+        entfeuchter_w = excluded.entfeuchter_w, wasserpumpe_w = excluded.wasserpumpe_w,
+        updated_at = datetime('now')`));
+  }
+  await env.DB.batch(stmts);
+  return jsonResponse({ ok: true, rows_written: values.length });
+}
+
 async function handleLiveData(request, env) {
   const db = env.DB;
   const url = new URL(request.url);
@@ -1171,6 +1205,8 @@ export default {
       let resp;
       if (pathname === "/api/upload/solarmanager" && request.method === "POST") {
         resp = await handleSolarmanagerUpload(request, env);
+      } else if (pathname === "/api/upload/solarmanager-15min" && request.method === "POST") {
+        resp = await handlePower15minUpload(request, env);
       } else if (pathname === "/api/upload/kostal" && request.method === "POST") {
         resp = await handleKostalUpload(request, env);
       } else if (pathname === "/api/admin/car-charger-control" && request.method === "POST") {

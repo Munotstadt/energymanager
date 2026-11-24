@@ -80,3 +80,18 @@ CREATE TABLE IF NOT EXISTS ekz_energy_prices_dynamic (
   created_at TEXT DEFAULT (datetime('now')),
   modified_at TEXT DEFAULT (datetime('now'))
 );
+
+-- 15-Minuten-Leistungsdaten aus dem Solarmanager-CSV-Export (Mittelwerte in W, Zeit in UTC); Import via public/import-15min.html
+CREATE TABLE IF NOT EXISTS solarmanager_power_15min (
+  valid_from TEXT PRIMARY KEY,
+  consumption_w REAL,
+  production_w REAL,
+  battery_charging_w REAL,
+  battery_discharging_w REAL,
+  grid_w REAL,
+  car_charging_w REAL,
+  entfeuchter_w REAL,
+  wasserpumpe_w REAL,
+  source TEXT DEFAULT 'csv',
+  updated_at TEXT DEFAULT (datetime('now'))
+);
