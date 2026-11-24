@@ -11,8 +11,6 @@
  * solarmanager-live / daily-stats laufen bereits als eigene Worker auf
  * derselben D1-DB (gleiche Tabellennamen wie bisher in Turso).
  */
-import { HISTORY_GZ_B64 } from "./history-data.js"; // TEMPORAER (einmaliger Import)
-
 
 const MODE_ONLY_SOLAR = 1;
 const MODE_MINIMAL_SOLAR = 5;
@@ -1060,77 +1058,6 @@ async function handleDynamicVsFix(request, env) {
   });
 }
 
-// TEMPORAER: einmaliger Import historischer 15-Minuten-Daten (Solarmanager-CSV, Mittelwerte in W)
-// -> solarmanager_live_points / solarmanager_live_devices. Daten liegen komprimiert in history-data.js.
-// GET /api/admin/import-history-once?offset=0&limit=500
-// Importierte Punkte sind markiert (Points: interval_secs = 900; Devices: raw_json = 'csv-15min') und werden bei
-// erneutem Import ersetzt (idempotent). Zeitpunkte ab dem ersten echten Live-Punkt werden uebersprungen.
-const HISTORY_DEVICES = {
-  inverter: "65168ab128ec518afa0f665f",
-  meter: "6516885afd811a3c709c5bc2",
-  car: "65d8b14d8c3c733fc7e1a3c2",
-  entfeuchter: "651bdb00fd811a3c70ec582a",
-  wasserpumpe: "65b54af8be4cb07b15618b39",
-};
-async function loadHistoryRows() {
-  const bin = Uint8Array.from(atob(HISTORY_GZ_B64), (c) => c.charCodeAt(0));
-  const text = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-  return text.split("\n").map((l) => {
-    const a = l.split(",");
-    return [new Date(Number(a[0]) * 60000).toISOString(), ...a.slice(1)];
-  });
-}
-async function handleHistoryImportOnce(request, env) {
-  const q = new URL(request.url).searchParams;
-  const offset = Math.max(0, Number(q.get("offset")) || 0);
-  const limit = Math.min(500, Math.max(1, Number(q.get("limit")) || 500));
-  const all = await loadHistoryRows();
-  const rows = all.slice(offset, offset + limit);
-  const res = rows.length ? await writeHistoryRows(rows, env) : { rows_written: 0, skipped: 0 };
-  return jsonResponse({ ...res, offset, next: offset + rows.length, total: all.length, done: offset + rows.length >= all.length });
-}
-async function writeHistoryRows(rows, env) {
-  const cut = await env.DB.prepare(
-    "SELECT MIN(fetched_at) AS m FROM solarmanager_live_points WHERE interval_secs IS NOT 900"
-  ).first();
-  const cutoff = cut && cut.m ? Date.parse(cut.m) : Infinity;
-  const n = (v) => { const x = Number(v); return v === null || v === "" || v === undefined || !Number.isFinite(x) ? "NULL" : String(x); };
-  const pts = [], devs = [];
-  let first = null, last = null, skipped = 0;
-  for (const r of rows) {
-    const t = Date.parse(r[0]);
-    if (!Number.isFinite(t)) continue;
-    if (t >= cutoff) { skipped++; continue; }
-    const iso = new Date(t).toISOString();
-    if (first === null || iso < first) first = iso;
-    if (last === null || iso > last) last = iso;
-    const bat = (Number(r[4]) || 0) - (Number(r[3]) || 0); // Entladen positiv, Laden negativ
-    pts.push(`('${iso}','${iso}',NULL,900,${bat},${n(r[5])},${n(r[1])},${n(r[2])},NULL)`);
-    const dv = (id, v) => devs.push(`('${iso}','${id}',${n(v)},'csv-15min')`);
-    dv(HISTORY_DEVICES.inverter, r[2]);
-    dv(HISTORY_DEVICES.meter, r[5]);
-    dv(HISTORY_DEVICES.car, r[6]);
-    dv(HISTORY_DEVICES.entfeuchter, r[7]);
-    dv(HISTORY_DEVICES.wasserpumpe, r[8]);
-  }
-  if (pts.length === 0) return { ok: true, rows_written: 0, skipped };
-  const stmts = [
-    env.DB.prepare("DELETE FROM solarmanager_live_points WHERE interval_secs = 900 AND fetched_at >= ? AND fetched_at <= ?").bind(first, last),
-    env.DB.prepare("DELETE FROM solarmanager_live_devices WHERE raw_json = 'csv-15min' AND fetched_at >= ? AND fetched_at <= ?").bind(first, last),
-  ];
-  for (let i = 0; i < pts.length; i += 300) {
-    stmts.push(env.DB.prepare(`INSERT INTO solarmanager_live_points
-      (fetched_at, timestamp, interface_version, interval_secs, current_battery_charge_discharge, current_grid_power, current_power_consumption, current_pv_generation, raw_json)
-      VALUES ${pts.slice(i, i + 300).join(",")}`));
-  }
-  for (let i = 0; i < devs.length; i += 300) {
-    stmts.push(env.DB.prepare(`INSERT INTO solarmanager_live_devices (fetched_at, device_id, current_power, raw_json)
-      VALUES ${devs.slice(i, i + 300).join(",")}`));
-  }
-  await env.DB.batch(stmts);
-  return { ok: true, rows_written: pts.length, device_rows: devs.length, skipped };
-}
-
 async function handleLiveData(request, env) {
   const db = env.DB;
   const url = new URL(request.url);
@@ -1244,8 +1171,6 @@ export default {
       let resp;
       if (pathname === "/api/upload/solarmanager" && request.method === "POST") {
         resp = await handleSolarmanagerUpload(request, env);
-      } else if (pathname === "/api/admin/import-history-once" && request.method === "GET") {
-        resp = await handleHistoryImportOnce(request, env);
       } else if (pathname === "/api/upload/kostal" && request.method === "POST") {
         resp = await handleKostalUpload(request, env);
       } else if (pathname === "/api/admin/car-charger-control" && request.method === "POST") {
